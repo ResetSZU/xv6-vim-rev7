@@ -14,6 +14,7 @@
 #include "mmu.h"
 #include "proc.h"
 #include "x86.h"
+#include "vim.h"
 
 static void consputc(int);
 
@@ -297,13 +298,14 @@ consoleinit(void)
   ioapicenable(IRQ_KBD, 0);
 }
 
-//vim的相关函数
-
-void setCursorPos(int x, int y) 
+//vim的相关函数 
+void setCursorPos(int pos) 
 {
-  if (x < 0 || x > 24 || y < 0 || y > 79)
-	  panic("x or y overflow\n");
-  int pos = x*80 + y;
+  if (pos<0 || pos>= ScreenMaxLen)
+	{
+    cprintf("pos overflow\n");
+    pos = 0;
+  }
   outb(CRTPORT, 14);
   outb(CRTPORT+1, pos>>8);
   outb(CRTPORT, 15);
@@ -320,3 +322,22 @@ int getCursorPos()
   pos |= inb(CRTPORT+1);
   return pos;
 }
+
+void clearScreen()
+{
+  memset(crt,0,sizeof(crt[0])*ScreenMaxLen);
+  setCursorPos(0);
+}
+
+void showTextToScreen(char* content)
+{
+  int pos = getCursorPos();
+  for(;pos<ScreenMaxLen && (*content)!='\0';pos++,content++ )
+  {
+    if(pos>=(ScreenMaxLen-ScreenMaxcol) && (*content)=='/n')
+      break;
+    cgaputc(*content);
+  }
+  return ;
+}
+

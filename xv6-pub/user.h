@@ -25,7 +25,9 @@ int sleep(int);
 int uptime(void);
 
 //vim.c
-int setCursorPos(int,int);
+void setCursorPos(int);
+void clearScreen();
+void showTextToScreen(char*);
 int getCursorPos();
 
 

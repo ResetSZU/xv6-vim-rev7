@@ -22,8 +22,11 @@ void            cprintf(char*, ...);
 void            consoleintr(int(*)(void));
 void            panic(char*) __attribute__((noreturn));
 
-void            setCursorPos(int,int);
+void            setCursorPos(int);
+void            clearScreen();
+void            showTextToScreen(char*);
 int             getCursorPos();
+
 
 // exec.c
 int             exec(char*, char**);

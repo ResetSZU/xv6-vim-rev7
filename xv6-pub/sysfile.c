@@ -445,13 +445,28 @@ sys_pipe(void)
 
 
 int sys_setCursorPos(void){
-	int x,y;
-	if(argint(0,&x)<0 || argint(1,&y)<0)
+	int pos;
+	if(argint(0,&pos)<0)
 		return -1;
-	setCursorPos(x,y);
+	setCursorPos(pos);
 	return 0;
 }
 
 int sys_getCursorPos(void){
 	return getCursorPos();
+}
+
+int sys_clearScreen(void)
+{
+  clearScreen();
+  return 0;
+}
+
+int sys_showTextToScreen(void)
+{
+  char* content;
+  if(argstr(0,&content)<0)
+    return -1;
+  showTextToScreen(content);
+  return 0;
 }

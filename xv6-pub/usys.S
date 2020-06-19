@@ -32,3 +32,5 @@ SYSCALL(uptime)
 
 SYSCALL(setCursorPos)
 SYSCALL(getCursorPos)
+SYSCALL(clearScreen)
+SYSCALL(showTextToScreen)
