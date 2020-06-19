@@ -297,3 +297,26 @@ consoleinit(void)
   ioapicenable(IRQ_KBD, 0);
 }
 
+//vim的相关函数
+
+void setCursorPos(int x, int y) 
+{
+  if (x < 0 || x > 24 || y < 0 || y > 79)
+	  panic("x or y overflow\n");
+  int pos = x*80 + y;
+  outb(CRTPORT, 14);
+  outb(CRTPORT+1, pos>>8);
+  outb(CRTPORT, 15);
+  outb(CRTPORT+1, pos);
+  crt[pos] |= 0x0700;
+}
+
+int getCursorPos()
+{
+  int pos;
+  outb(CRTPORT, 14);
+  pos = inb(CRTPORT+1) << 8;
+  outb(CRTPORT, 15);
+  pos |= inb(CRTPORT+1);
+  return pos;
+}

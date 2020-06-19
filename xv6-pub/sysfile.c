@@ -442,3 +442,16 @@ sys_pipe(void)
   fd[1] = fd1;
   return 0;
 }
+
+
+int sys_setCursorPos(void){
+	int x,y;
+	if(argint(0,&x)<0 || argint(1,&y)<0)
+		return -1;
+	setCursorPos(x,y);
+	return 0;
+}
+
+int sys_getCursorPos(void){
+	return getCursorPos();
+}
