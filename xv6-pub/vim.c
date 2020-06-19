@@ -54,11 +54,12 @@ int main(int argc, char **argv)
     initEditor();
    // printf(1,"%s",Text.content);
     RefreshScreen();
-    //while(1)
+    while(1)
     {
         //这里考虑放在process里面还是外面
         char ichar;
         readCharFromScreen(&ichar);
+        printf(1,"this is input : %c \n",ichar);
         ProcessKeyPress(ichar);
   //      RefreshScreen();
     }
@@ -126,5 +127,6 @@ void initEditor()
 }
 void readCharFromScreen(char* ichar)
 {
+    read(0,ichar,1);
     printf(1,"read input from screen successfully\n");
 }
