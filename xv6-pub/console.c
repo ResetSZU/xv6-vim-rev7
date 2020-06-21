@@ -20,6 +20,9 @@ static void consputc(int);
 
 static int panicked = 0;
 
+static int onScreenBuffer = 0;
+static int onScreenShow = 1;
+
 static struct {
   struct spinlock lock;
   int locking;
@@ -218,8 +221,9 @@ consoleintr(int (*getc)(void))
       if(c != 0 && input.e-input.r < INPUT_BUF){
         c = (c == '\r') ? '\n' : c;
         input.buf[input.e++ % INPUT_BUF] = c;
-        consputc(c);
-        if(c == '\n' || c == C('D') || input.e == input.r+INPUT_BUF){
+        if(onScreenShow)
+          consputc(c);
+        if(onScreenBuffer ||  c == '\n' || c == C('D') || input.e == input.r+INPUT_BUF){
           input.w = input.e;
           wakeup(&input.r);
         }
@@ -298,7 +302,7 @@ consoleinit(void)
   ioapicenable(IRQ_KBD, 0);
 }
 
-//vim的相关函数 
+//====================================vim的相关函数===================================== 
 void setCursorPos(int pos) 
 {
   if (pos<0 || pos>= ScreenMaxLen)
@@ -332,7 +336,8 @@ void clearScreen()
 void showTextToScreen(char* content)
 {
   int pos = getCursorPos();
-  for(;pos<ScreenMaxLen && (*content)!='\0';pos++,content++ )
+  int toffset = 0;
+  for(;toffset<ScreenMaxcol && pos<ScreenMaxLen && (*content)!='\0';toffset++,pos++,content++)
   {
     if(pos>=(ScreenMaxLen-ScreenMaxcol) && (*content)=='/n')
       break;
@@ -341,3 +346,9 @@ void showTextToScreen(char* content)
   return ;
 }
 
+void onScreenflag(int bufferflag,int showflag)
+{
+  onScreenBuffer = bufferflag;
+  onScreenShow = showflag;
+  return ;
+}

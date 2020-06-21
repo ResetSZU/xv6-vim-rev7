@@ -25,3 +25,4 @@
 #define SYS_getCursorPos 23
 #define SYS_clearScreen  24
 #define SYS_showTextToScreen 25
+#define SYS_onScreenflag 26

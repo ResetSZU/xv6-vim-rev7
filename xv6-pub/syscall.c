@@ -108,6 +108,7 @@ extern int sys_setCursorPos(void);
 extern int sys_getCursorPos(void);
 extern int sys_clearScreen(void);
 extern int sys_showTextToScreen(void);
+extern int sys_onScreenflag(voud);
 
 static int (*syscalls[])(void) = {
 [SYS_fork]    sys_fork,
@@ -136,6 +137,7 @@ static int (*syscalls[])(void) = {
 [SYS_getCursorPos]    sys_getCursorPos,
 [SYS_clearScreen]     sys_clearScreen,
 [SYS_showTextToScreen]  sys_showTextToScreen,
+[SYS_onScreenflag]      sys_onScreenflag,
 };
 
 void

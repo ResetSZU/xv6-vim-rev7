@@ -7,21 +7,24 @@
 #include "user.h"
 #include "fcntl.h"
 #include "vim.h"
+#include "re.h"
+
 //=====================================这里是数据结构＝＝＝==========================
 typedef struct row
 {
     int size; //这是实际长度
-    char* Tcahrs;
+    char* Tchars;
     uchar* colors;
 }row;
 
 typedef struct editorText
 {
-    char* content; // 这里我们采用一维数组的方式存储内容，不想太麻烦了
-    char* colors;
+    row** content; // 这里我们采用二维数组的方式存储内容，不想太麻烦了
     uint size;  //文本长度
     uint Textrow;//文本实际行数
-    char* BeginChar;//屏幕第一行对应文本的位置，上下翻页
+    uint TextMallocRow; //文本申请行数
+    row** BeginRow;//屏幕第一行对应文本的位置，上下翻页
+    char* AcitveChar; //光标动作发生处
     row bottomMsg; // 这里就是底部状态栏了
     uchar TextDirty;  //若没有修改文本，则不写，节约读写
     //后面看喜欢加吧
@@ -32,9 +35,15 @@ static editorText Text;
 
 void ReadfromFile(char*fileName);
 void RefreshScreen();
-void ProcessKeyPress(char ichar);
+void ProcessKeyPress();
 void initEditor();
 void readCharFromScreen(char* ichar);
+void movePosRight();
+void movePosLeft();
+void movePosUp();
+void movePosDonw();
+void showAllTextToScreen(row**);
+void RefreshScreenKpos();
 int  getFileSize(char* filename);
 
 //=====================================主程序===============================================
@@ -52,17 +61,16 @@ int main(int argc, char **argv)
     //這裏好像要保存原來的screen內容，看情況吧
     ReadfromFile(fileName);
     initEditor();
-   // printf(1,"%s",Text.content);
+    //这个是让即时读取输入
+    onScreenflag(1,0);
     RefreshScreen();
     while(1)
     {
         //这里考虑放在process里面还是外面
-        char ichar;
-        readCharFromScreen(&ichar);
-        printf(1,"this is input : %c \n",ichar);
-        ProcessKeyPress(ichar);
-  //      RefreshScreen();
+        ProcessKeyPress();
+    //    RefreshScreen();
     }
+    onScreenflag(0,1);
     //可能要写文本，还原，重设光标，不知道放在哪里比较好
     //也许是process里面？
     exit();
@@ -74,29 +82,60 @@ int main(int argc, char **argv)
 void ReadfromFile(char*fileName)
 {
     printf(1,"read file successfully\n");
-    int fd = 0, filesize = -1,cnt=0;
+    int fd = 0, filesize = -1;
     if(fileName==NULL || (fd = open(fileName, O_RDONLY))<0)
     {
         printf(1,"open error! %d \n",fd);
-        Text.content = malloc(InitFileSize);
+        Text.content = malloc(sizeof(row*)*FileMaxrowLen);
+        Text.content[0] = NULL;
+        Text.TextMallocRow = 0;
+        Text.Textrow = 0;
         Text.size = 0;
     }else
     {
         filesize = getFileSize(fileName);
         //这里就是初始化Text的地方,
-        Text.content = malloc(filesize+InitFileSize);
-        Text.size = read(fd, Text.content, filesize);
+        Text.content = malloc(sizeof(row*)*FileMaxrowLen);
+        char* allText = malloc(filesize);
+        Text.size = read(fd,allText,filesize);
+        int rowcnt = 0,Textpos=0;
+        while(1)
+        {
+            if(Textpos>=Text.size)
+                break;
+            Text.content[rowcnt] = malloc(sizeof(row));
+            char* tchar = malloc(ScreenMaxcol);
+            int i = 0;
+            for(;i<ScreenMaxcol && Textpos<Text.size;i++,Textpos++)
+            {
+                tchar[i] = allText[Textpos];
+                if(tchar[i] == '\n')
+                {
+                    i += 1;
+                    Textpos += 1;
+                    break;
+                }
+            }
+            Text.content[rowcnt]->size = i;
+            Text.content[rowcnt]->Tchars = tchar;
+            rowcnt += 1;
+        }
+        Text.TextMallocRow = rowcnt ;
+        Text.content[rowcnt] = NULL;
+        Text.BeginRow = Text.content;
+        free(allText);
         close(fd);
         if(Text.size < 0)
             Text.size = 0;
     }
     Text.TextDirty = 0;
     printf(1,"this is filesize:%d , readsize:%d\n",filesize,Text.size);
-    return Text.size;
+    return ;
 }
 
 int getFileSize(char* filename)
 {
+    //这里就是根据stat这个结构来得到size
     struct stat stat_file;
     int filesize = -1;
     if (stat(filename, &stat_file) <0  || stat_file.type != 2)
@@ -105,28 +144,174 @@ int getFileSize(char* filename)
     return filesize;
 }
 
+void RefreshScreenKpos()
+{
+    int pos = getCursorPos();
+    RefreshScreen();
+    setCursorPos(pos);
+}
+
 void RefreshScreen()
 {
     clearScreen();
-    showTextToScreen(Text.BeginChar);
-  //  printf(1,"refresh screen successfully\n");
+    showAllTextToScreen(Text.content);
+   // printf(1,"refresh screen successfully\n");
 }
 
-void ProcessKeyPress(char ichar)
+void showAllTextToScreen(row** BeginRow)
 {
-    printf(1,"deal with input successfully\n");
+    for(;(*BeginRow)!=NULL;BeginRow++)
+    {
+        showTextToScreen((*BeginRow)->Tchars);
+    }
+}
+
+
+void ProcessKeyPress()
+{
+    //这里是初始模式,:进入命令模式，i进入编辑模式
+    char ichar ;
+    readCharFromScreen(&ichar);
+    switch (ichar)
+    {
+    case 'i':
+     //   printf(1,"enter insert mode\n");
+        editorInsert();
+        break;
+    case ':':
+      //  editorCommond();
+        break;
+    
+    default:
+        break;
+    }
+ //   printf(1,"deal with input successfully\n");
+
 }
 
 void initEditor()
 {
-    clearScreen();
-    Text.BeginChar = Text.content;
-    Text.bottomMsg.Tcahrs = malloc(ScreenMaxcol);
+    Text.BeginRow = Text.content;
+    Text.bottomMsg.Tchars = malloc(ScreenMaxcol);
     Text.bottomMsg.size = ScreenMaxcol;
+    clearScreen();
   //  printf(1,"init screen successfully\n");
 }
 void readCharFromScreen(char* ichar)
 {
     read(0,ichar,1);
-    printf(1,"read input from screen successfully\n");
+   // printf(1,"%c ------- read input from screen successfully\n",*ichar);
+}
+
+
+
+
+void editorInsert()
+{
+    char ichar ;
+    while(1)
+    {
+        readCharFromScreen(&ichar);
+        unsigned char unichar = (unsigned char)(ichar);
+        switch (unichar)
+        {
+        case VIM_UP:
+            movePosUp();
+            break;
+        case VIM_DOWN:
+            movePosDown();
+            break;
+        case VIM_LEFT:
+            movePosLeft();
+            break;
+        case VIM_RIGHT:
+            movePosRight();
+            break;
+        default:
+            printf(1,"this is insert default  %d\n",unichar);
+            break;
+        }
+    }
+  //  RefreshScreen();
+}
+//这个就是光标右移动
+void movePosRight()
+{
+    int tpos = getCursorPos();
+    int trow = tpos/ScreenMaxcol;
+    int tcol = tpos - trow*ScreenMaxcol;
+   // printf(1,"this is right %d %d %d %d %d\n",Text.BeginRow-Text.content,trow,Text.TextMallocRow,tcol,Text.BeginRow[trow]->Tchars[tcol]);
+    if(Text.BeginRow-Text.content+trow>=Text.TextMallocRow-1 && tcol>=Text.content[trow]->size-1)
+    {
+        return ;
+    }
+    if(tcol==ScreenMaxcol-1 || Text.BeginRow[trow]->Tchars[tcol]=='\n')
+    {
+        trow += 1;
+        tcol = 0;
+    }else
+    {
+        tcol += 1;
+    }
+    
+    if(trow>=ScreenMaxRow)
+    {
+        Text.BeginRow += 1;
+        trow  = ScreenMaxRow-1;
+    }
+    setCursorPos(ScreenMaxcol*trow + tcol);
+}
+
+void movePosLeft()
+{
+    int tpos = getCursorPos();
+    int trow = tpos/ScreenMaxcol;
+    int tcol = tpos - trow*ScreenMaxcol;
+    if(Text.BeginRow == Text.content && tpos == 0 )
+        return ;
+    tcol -= 1;
+    if(tcol<0)
+    {
+        trow -= 1;
+        tcol = Text.content[trow]->size - 1;
+    }
+    if(trow<0)
+    {
+        Text.BeginRow -= 1;
+        trow = 0;
+    }
+    setCursorPos(ScreenMaxcol*trow + tcol);
+}
+
+void movePosUp()
+{
+    int tpos = getCursorPos();
+    int trow = tpos/ScreenMaxcol;
+    int tcol = tpos - trow*ScreenMaxcol;
+    if(trow==0)
+    {
+        if(Text.BeginRow == Text.content)
+            return ;
+        Text.BeginRow -= 1;
+    }else
+        trow -= 1;
+    while (tcol>0 && Text.BeginRow[trow]->Tchars[tcol]=='\0')
+        tcol -= 1;
+    setCursorPos(ScreenMaxcol*trow + tcol);
+}
+
+void movePosDown()
+{
+    int tpos = getCursorPos();
+    int trow = tpos/ScreenMaxcol;
+    int tcol = tpos - trow*ScreenMaxcol;
+    if(Text.BeginRow-Text.content+trow>=Text.TextMallocRow-1)
+        return ;
+    if(trow == ScreenMaxRow-1)
+        Text.BeginRow += 1;
+    else
+        trow += 1;
+    while (tcol>0 && Text.BeginRow[trow]->Tchars[tcol]=='\0')
+        tcol -= 1;
+    setCursorPos(ScreenMaxcol*trow + tcol);
 }

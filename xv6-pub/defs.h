@@ -25,6 +25,7 @@ void            panic(char*) __attribute__((noreturn));
 void            setCursorPos(int);
 void            clearScreen();
 void            showTextToScreen(char*);
+void            onScreenflag(int,int);
 int             getCursorPos();
 
 

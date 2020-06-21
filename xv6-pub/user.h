@@ -28,6 +28,7 @@ int uptime(void);
 void setCursorPos(int);
 void clearScreen();
 void showTextToScreen(char*);
+void onScreenflag(int,int);
 int getCursorPos();
 
 

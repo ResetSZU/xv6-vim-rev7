@@ -470,3 +470,12 @@ int sys_showTextToScreen(void)
   showTextToScreen(content);
   return 0;
 }
+
+int sys_onScreenflag(void)
+{
+  int bufferflag,showflag;
+	if(argint(0,&bufferflag)<0 || argint(1,&showflag)<0)
+		return -1;
+	onScreenflag(bufferflag,showflag);
+	return 0;
+}
