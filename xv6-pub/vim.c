@@ -31,6 +31,7 @@ typedef struct editorText
 }editorText;
 
 static editorText Text;
+static row TmpBufferRow; 
 //=====================================这里就是定义函数了==================================
 
 void ReadfromFile(char*fileName);
@@ -56,6 +57,7 @@ int main(int argc, char **argv)
         printf(1,"error");
         exit();
     }    
+    TmpBufferRow.Tchars = malloc(ScreenMaxcol);
     char* fileName = argv[1];
 
     //這裏好像要保存原來的screen內容，看情況吧
@@ -70,6 +72,7 @@ int main(int argc, char **argv)
         ProcessKeyPress();
     //    RefreshScreen();
     }
+    free(TmpBufferRow.Tchars);
     onScreenflag(0,1);
     //可能要写文本，还原，重设光标，不知道放在哪里比较好
     //也许是process里面？
@@ -227,8 +230,11 @@ void editorInsert()
         case VIM_RIGHT:
             movePosRight();
             break;
+        case VIM_ESC:
+            return;
         default:
-            printf(1,"this is insert default  %d\n",unichar);
+            insertChar(ichar);
+          //  printf(1,"this is insert default  %d\n",unichar);
             break;
         }
     }
@@ -314,4 +320,66 @@ void movePosDown()
     while (tcol>0 && Text.BeginRow[trow]->Tchars[tcol]=='\0')
         tcol -= 1;
     setCursorPos(ScreenMaxcol*trow + tcol);
+}
+
+void insertChar(char ichar)
+{
+    int pos = getCursorPos();
+    int trow = pos/ScreenMaxcol,tcol = pos%ScreenMaxcol;
+    if(ichar!='\n')
+    {
+       // moveNchars(1,trow,tcol);
+        Text.BeginRow[trow]->Tchars[tcol] = ichar;
+    }
+}
+//BeginRow爲base,在行列出移動n个字符
+void moveNchars(int n,int trow,int tcol)
+{
+//memmove(void *dst, const void *src, uint n)
+    row** brow = Text.BeginRow;
+    char tmprow[ScreenMaxcol] ;
+    while(1)
+    {
+        if(brow[trow] == NULL)
+        {
+            brow[trow] = malloc(sizeof(row));
+            brow[trow]->Tchars = malloc(ScreenMaxcol);
+            brow[trow]->size = 0;
+            brow[trow+1] = NULL;
+        }
+        char* tchar = brow[trow]->Tchars;
+        int tsize = brow[trow]->size;
+        if(tsize<ScreenMaxcol) //這裏是段落尾部了可以結束了
+        {
+            if(tsize+n<ScreenMaxcol)//這裏是不用換行
+            {
+                memmove(tchar[tcol+n],tchar[tcol],tsize-tcol);
+                memmove(tchar[tcol],TmpBufferRow.Tchars,TmpBufferRow.size);
+                brow[trow]->size += n;
+                break;
+            }else    //這裏就要換行了
+            {
+                memmove(TmpBufferRow.Tchars,tchar[ScreenMaxcol-n],tsize+n-ScreenMaxcol);
+                TmpBufferRow.size = tsize+n-ScreenMaxcol;
+                memmove(tchar[tcol+n],tchar[tcol],ScreenMaxcol-tcol-n);
+                brow[trow]->size = ScreenMaxcol;
+                tcol = 0;
+                //Text.TextMallocRow += 1;
+                for(int i=Text.TextMallocRow;Text.content[i]!=brow[trow+1];i++)
+                    Text.content[i+1] = Text.content[i];
+                brow[trow+1] = malloc(sizeof(row));
+                brow[trow+1]->Tchars = malloc(ScreenMaxcol);
+                memmove(brow[trow+1]->Tchars,TmpBufferRow.Tchars,TmpBufferRow.size);
+                brow[trow+1]->size = TmpBufferRow.size;
+            }
+        }else
+        {
+            memmove(tmprow,tchar[ScreenMaxcol-n],n);
+            memmove(tchar[tcol+n],tchar[tcol],ScreenMaxcol-tcol-n);
+            memmove(tchar[tcol],TmpBufferRow.Tchars,n);
+            memmove(TmpBufferRow.Tchars,tmprow,n);
+            tcol = 0;trow += 1;
+        }
+        
+    }
 }
