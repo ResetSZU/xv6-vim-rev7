@@ -133,7 +133,7 @@ void ReadfromFile(char*fileName)
             Text.size = 0;
     }
     Text.TextDirty = 0;
-    printf(1,"this is filesize:%d , readsize:%d\n",filesize,Text.size);
+    printf(1,"this is filesize:%d , readsize:%d  row is %d\n",filesize,Text.size,Text.TextMallocRow);
     return ;
 }
 
@@ -249,9 +249,10 @@ void editorInsert()
         case VIM_ESC:
             return;
         default:
-            insertChar(ichar,pos);
+            insertChar(ichar);
+            pos = getCursorPos();
             RefreshScreen();
-            setCursorPos(pos+1);
+            setCursorPos(pos);
           //  printf(1,"this is insert default  %d\n",unichar);
             break;
         }
@@ -340,24 +341,69 @@ void movePosDown()
     setCursorPos(ScreenMaxcol*trow + tcol);
 }
 
-void insertChar(char ichar,int pos)
+void insertChar(char ichar)
 {
+    int pos = getCursorPos();
     int trow = pos/ScreenMaxcol,tcol = pos%ScreenMaxcol;
-    if(ichar!='\n')
+    row* Currow = Text.BeginRow[trow];
+    switch (ichar)
     {
+    case '\n':  //这里需要判断是不是段尾，所以很麻烦
+        memmove(TmpBufferRow.Tchars,Currow->Tchars+tcol,Currow->size-tcol);
+        TmpBufferRow.size = Currow->size;
+        if(Currow->Tchars[Currow->size-1]=='\n')
+        {
+            Text.BeginRow[trow]->Tchars[tcol] = '\n';
+            memset(Currow->Tchars+tcol+1,'\0',ScreenMaxcol-tcol-1);
+            newLine(Text.BeginRow+trow+1);
+            memmove(Text.BeginRow[trow+1]->Tchars,TmpBufferRow.Tchars,TmpBufferRow.size);
+            Text.BeginRow[trow+1]->size = TmpBufferRow.size;
+        }else
+        {
+            Text.BeginRow[trow]->Tchars[tcol] = '\n';
+            memset(Currow->Tchars+tcol+1,'\0',ScreenMaxcol-tcol-1);
+            moveNchars(TmpBufferRow.size,trow+1,tcol);
+            memmove(Text.BeginRow[trow+1]->Tchars,TmpBufferRow.Tchars,TmpBufferRow.size);
+
+        }
+        setCursorPos((trow+1)*ScreenMaxcol);
+        break;
+    case '\t':
+        memset(TmpBufferRow.Tchars,' ',TabLength);
+        TmpBufferRow.size = TabLength;
+        moveNchars(4,trow,tcol);
+        setCursorPos(pos+4);
+        break;
+    default:
         TmpBufferRow.Tchars[0] = ichar;
         TmpBufferRow.size = 1;
         moveNchars(1,trow,tcol);
-        Text.BeginRow[trow]->Tchars[tcol] = ichar;
+        setCursorPos(pos+1);
+        break;
     }
+    
 }
-//BeginRow爲base,在行列出移動n个字符
+
+void newLine(row** irow)
+{
+    for(int i=Text.TextMallocRow;Text.content+i!=irow-1;--i)
+    {
+        Text.content[i+1] = Text.content[i];
+    }
+    (*irow) = malloc(sizeof(row));
+    (*irow)->Tchars = malloc(ScreenMaxcol);
+    memset((*irow)->Tchars,'\0',ScreenMaxcol);
+    Text.TextMallocRow += 1;
+}
+
+//BeginRow爲base,在行列处移動n个字符
 void moveNchars(int n,int trow,int tcol)
 {
     //memmove(void *dst, const void *src, uint n)
   //  printf(1,"movechar %d\n",n);
     row** brow = Text.BeginRow;
     char tmprow[ScreenMaxcol] ;
+    int tmpRowSize = 0;
     while(1)
     {
         if(brow[trow] == NULL)
@@ -370,36 +416,29 @@ void moveNchars(int n,int trow,int tcol)
         }
         char* tchar = brow[trow]->Tchars;
         int tsize = brow[trow]->size;
-        if(tsize<ScreenMaxcol) //這裏是段落尾部了可以結束了
+        if(tsize+n<=ScreenMaxcol) //這裏是段落尾部了可以結束了
         {
-            printf(1,"this is tsize %d\n",tsize);
-            if(tsize+n<=ScreenMaxcol)//這裏是不用換行
-            {
-                memmove(tchar+tcol+n,tchar+tcol,tsize-tcol);
-                memmove(tchar+tcol,TmpBufferRow.Tchars,TmpBufferRow.size);
-                brow[trow]->size += n;
-                break;
-            }else    //這裏就要換行了
-            {
-                memmove(TmpBufferRow.Tchars,tchar+ScreenMaxcol-n,tsize+n-ScreenMaxcol);
-                TmpBufferRow.size = tsize+n-ScreenMaxcol;
-                memmove(tchar+tcol+n,tchar+tcol,ScreenMaxcol-tcol-n);
-                brow[trow]->size = ScreenMaxcol;
-                tcol = 0;
-                for(int i=Text.TextMallocRow;Text.content[i]!=brow[trow+1];i++)
-                    Text.content[i+1] = Text.content[i];
-                brow[trow+1] = malloc(sizeof(row));
-                brow[trow+1]->Tchars = malloc(ScreenMaxcol);
-                Text.TextMallocRow += 1;
-                memmove(brow[trow+1]->Tchars,TmpBufferRow.Tchars,TmpBufferRow.size);
-                brow[trow+1]->size = TmpBufferRow.size;
-            }
+           // printf(1,"this is tsize %d\n",tsize);
+            memmove(tchar+tcol+n,tchar+tcol,tsize-tcol);
+            memmove(tchar+tcol,TmpBufferRow.Tchars,TmpBufferRow.size);
+            brow[trow]->size += n;
+            break;
+            
         }else
         {
-            memmove(tmprow,tchar+ScreenMaxcol-n,n);
-            memmove(tchar+tcol+n,tchar+tcol,ScreenMaxcol-tcol-n);
-            memmove(tchar+tcol,TmpBufferRow.Tchars,n);
-            memmove(TmpBufferRow.Tchars,tmprow,n);
+            tmpRowSize = tsize+TmpBufferRow.size-ScreenMaxcol;
+            memmove(tmprow,tchar+tsize-tmpRowSize,tmpRowSize); //保存该行尾部的内容
+            memmove(tchar+tcol+tmpRowSize,tchar+tcol,tsize-tcol-tmpRowSize);
+            memmove(tchar+tcol,TmpBufferRow.Tchars,TmpBufferRow.size);
+            memmove(TmpBufferRow.Tchars,tmprow,tmpRowSize);
+            TmpBufferRow.size = tmpRowSize;
+            if(TmpBufferRow.Tchars[tmpRowSize-1]=='\n')
+            {
+                newLine(brow+trow+1);
+                memmove(brow[trow+1]->Tchars,TmpBufferRow.Tchars,TmpBufferRow.size);
+                brow[trow+1]->size = TmpBufferRow.size;
+                break; ;
+            }
             tcol = 0;trow += 1;
         }
         
