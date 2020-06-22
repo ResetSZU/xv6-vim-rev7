@@ -95,12 +95,20 @@ atoi(const char *s)
 void*
 memmove(void *vdst, const void *vsrc, int n)
 {
-  char *dst;
-  const char *src;
 
-  dst = vdst;
-  src = vsrc;
-  while(n-- > 0)
-    *dst++ = *src++;
+  const char *s;
+  char *d;
+
+  s = vsrc;
+  d = vdst;
+  if(s < d && s + n > d){
+    s += n;
+    d += n;
+    while(n-- > 0)
+      *--d = *--s;
+  } else
+    while(n-- > 0)
+      *d++ = *s++;
+
   return vdst;
 }
