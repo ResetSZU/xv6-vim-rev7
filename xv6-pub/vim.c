@@ -272,18 +272,20 @@ void editorInsert()
     }
   //  RefreshScreen();
 }
+//==============================這裏是光標的移動呀＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝
 //这个就是光标右移动
 void movePosRight()
 {
     int tpos = getCursorPos();
     int trow = tpos/ScreenMaxcol;
     int tcol = tpos - trow*ScreenMaxcol;
+    int flagRefresh = 0;
    // printf(1,"this is right %d %d %d %d %d\n",Text.BeginRow-Text.content,trow,Text.TextMallocRow,tcol,Text.BeginRow[trow]->Tchars[tcol]);
     if(Text.BeginRow-Text.content+trow>=Text.TextMallocRow-1 && tcol>=Text.BeginRow[trow]->size-1)
     {
         return ;
     }
-    if(tcol==ScreenMaxcol-1 || Text.BeginRow[trow]->Tchars[tcol]=='\n' || tcol==Text.BeginRow[trow]->size)
+    if(tcol==Text.BeginRow[trow]->size-1)
     {
         trow += 1;
         tcol = 0;
@@ -296,8 +298,11 @@ void movePosRight()
     {
         Text.BeginRow += 1;
         trow  = ScreenMaxRow-1;
+        flagRefresh = 1;
     }
     setCursorPos(ScreenMaxcol*trow + tcol);
+    if(flagRefresh)
+        RefreshScreenKpos();
 }
 
 void movePosLeft()
@@ -305,6 +310,7 @@ void movePosLeft()
     int tpos = getCursorPos();
     int trow = tpos/ScreenMaxcol;
     int tcol = tpos - trow*ScreenMaxcol;
+    int flagRefresh = 0;
     if(Text.BeginRow == Text.content && tpos == 0 )
         return ;
     tcol -= 1;
@@ -317,8 +323,11 @@ void movePosLeft()
     {
         Text.BeginRow -= 1;
         trow = 0;
+        flagRefresh = 1;
     }
     setCursorPos(ScreenMaxcol*trow + tcol);
+    if(flagRefresh)
+        RefreshScreenKpos();
 }
 
 void movePosUp()
@@ -362,12 +371,16 @@ void movePosDown()
         RefreshScreenKpos();
 }
 
+//==============================這裏是光標的移動呀＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝
+
 void insertChar(char ichar)
 {
     int pos = getCursorPos();
     int trow = pos/ScreenMaxcol,tcol = pos%ScreenMaxcol;
     row* Currow = Text.BeginRow[trow];
-    switch (ichar)
+    unsigned char uichar = (unsigned char)ichar;
+   // printf(1,"this is input char%d",uichar);
+    switch (uichar)
     {
     case '\n':  //这里需要判断是不是段尾，所以很麻烦
         memmove(TmpBufferRow.Tchars,Currow->Tchars+tcol,Currow->size-tcol);
@@ -402,17 +415,15 @@ void insertChar(char ichar)
         }else
             setCursorPos(pos);
         break;
+    case VIM_DELETE:
+        moveLeftNchars(1,trow,tcol);
+        movePosLeft();
+        break;
     default:
         TmpBufferRow.Tchars[0] = ichar;
         TmpBufferRow.size = 1;
         moveRightNchars(1,trow,tcol);
-        pos += 1;
-        if(pos>=ScreenMaxLen)
-        {
-            setCursorPos(pos-ScreenMaxcol);
-            movePosDown();
-        }else
-            setCursorPos(pos);
+        movePosRight();
         break;
     }
     
@@ -455,9 +466,10 @@ void deleteLine(row** irow)
     }
     for(int i=irow-Text.content;i<Text.TextMallocRow;++i)
         Text.content[i] = Text.content[i+1];
+    Text.content[Text.TextMallocRow] = NULL;
     Text.TextMallocRow -= 1;
 }
-//BeginRow爲base,在行列处移動n个字符
+//BeginRow爲base,在行列处向右移動n个字符
 void moveRightNchars(int n,int trow,int tcol)
 {
     //memmove(void *dst, const void *src, uint n)
@@ -511,6 +523,7 @@ void moveRightNchars(int n,int trow,int tcol)
     }
 }
 
+//BeginRow爲base,在行列处向左移動n个字符
 void moveLeftNchars(int n,int trow,int tcol)
 {
     row** brow = Text.BeginRow;
@@ -518,6 +531,60 @@ void moveLeftNchars(int n,int trow,int tcol)
     int tmpRowSize = 0;
     while(1)
     {
-
+        if(trow+brow-Text.content==Text.TextMallocRow)
+            return ;
+        if(brow[trow]->Tchars[tcol]=='\n')
+        {
+            TmpBufferRow.size = ScreenMaxcol-tcol;
+            if(trow+brow-Text.content==Text.TextMallocRow-1)
+            {
+                brow[trow]->Tchars[tcol] = '\0';
+                brow[trow]->size -= 1;
+                break;
+            }else
+            {
+                memmove(brow[trow]->Tchars+tcol,brow[trow+1]->Tchars,
+                    min(brow[trow+1]->size,TmpBufferRow.size));
+                brow[trow]->size += min(brow[trow+1]->size,TmpBufferRow.size)-1;
+                n = TmpBufferRow.size;
+                trow += 1;
+                tcol = 0;
+            }
+        }
+        if(brow[trow]->Tchars[brow[trow]->size-1]=='\n')
+        {
+            if(n>=brow[trow]->size-tcol)
+            {
+                memset(brow[trow]->Tchars[tcol],'\0',ScreenMaxcol-tcol);
+                if(tcol == 0)
+                    deleteLine(brow+trow);
+                else
+                    brow[trow]->size = tcol;
+            }
+            else
+            {
+                memmove(brow[trow]->Tchars+tcol,brow[trow]->Tchars+tcol+n,
+                    brow[trow]->size-tcol-n);
+                memset(brow[trow]->Tchars+brow[trow]->size-n,'\0',ScreenMaxcol-brow[trow]->size+n);
+                brow[trow]->size -= n;
+            }
+            break;
+        }else
+        {
+            memmove(brow[trow]->Tchars+tcol,brow[trow]->Tchars+tcol+n,
+                    brow[trow]->size-tcol-n);
+            memset(brow[trow]->Tchars+brow[trow]->size-n,'\0',ScreenMaxcol-brow[trow]->size+n);
+            if(trow+brow-Text.content<Text.TextMallocRow-1)
+            {
+                memmove(brow[trow]->Tchars+brow[trow]->size-n,brow[trow+1]->Tchars
+                    ,min(ScreenMaxcol-brow[trow]->size+n,brow[trow+1]->size));
+                brow[trow]->size += min(ScreenMaxcol-brow[trow]->size+n,brow[trow+1]->size)-n;
+            }else
+                brow[trow]->size -= n;
+            trow += 1;
+            tcol = 0;
+            
+        }
+        
     }
 }
