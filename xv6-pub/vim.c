@@ -356,10 +356,6 @@ void insertChar(char ichar)
     int pos = getCursorPos();
     int trow = pos/ScreenMaxcol,tcol = pos%ScreenMaxcol;
     row* Currow = Text.BeginRow[trow];
-    printf(1,"this is row %d  col %d\n",trow,tcol);
-    printf(1,"%s",Currow->Tchars);
-    printf(1,"%s",Text.content[0]->Tchars);
-    printf(1,"%s",Text.BeginRow[0]->Tchars);
     switch (ichar)
     {
     case '\n':  //这里需要判断是不是段尾，所以很麻烦
@@ -387,13 +383,25 @@ void insertChar(char ichar)
         memset(TmpBufferRow.Tchars,' ',TabLength);
         TmpBufferRow.size = TabLength;
         moveNchars(4,trow,tcol);
-        setCursorPos(pos+4);
+        pos += 4;
+        if(pos>=ScreenMaxLen)
+        {
+            setCursorPos(pos-ScreenMaxcol);
+            movePosDown();
+        }else
+            setCursorPos(pos);
         break;
     default:
         TmpBufferRow.Tchars[0] = ichar;
         TmpBufferRow.size = 1;
         moveNchars(1,trow,tcol);
-        setCursorPos(pos+1);
+        pos += 1;
+        if(pos>=ScreenMaxLen)
+        {
+            setCursorPos(pos-ScreenMaxcol);
+            movePosDown();
+        }else
+            setCursorPos(pos);
         break;
     }
     
