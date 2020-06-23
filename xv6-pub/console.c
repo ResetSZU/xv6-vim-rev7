@@ -153,7 +153,7 @@ cgaputc(int c)
   if(pos < 0 || pos > 25*80)
     panic("pos under/overflow");
 
-  if((pos/80) >= 24){  // Scroll up.
+  if((pos/80) > 24){  // Scroll up.
     memmove(crt, crt+80, sizeof(crt[0])*23*80);
     pos -= 80;
     memset(crt+pos, 0, sizeof(crt[0])*(24*80 - pos));
@@ -333,13 +333,14 @@ void clearScreen()
   setCursorPos(0);
 }
 
-void showTextToScreen(char* content)
+void showTextToScreen(char* content,int tsize)
 {
   int pos = getCursorPos();
   int toffset = 0;
-  for(;toffset<ScreenMaxcol && pos<ScreenMaxLen && (*content)!='\0';toffset++,pos++,content++)
+  tsize = tsize<ScreenMaxLen?tsize:ScreenMaxLen;
+  for(;toffset<tsize && pos<ScreenMaxLen ;toffset++,pos++,content++)
   {
-    if(pos>=(ScreenMaxLen-ScreenMaxcol) && (*content)=='/n')
+    if((pos>=(ScreenMaxLen-ScreenMaxcol)) && ((*content)=='\n'))
       break;
     cgaputc(*content);
   }

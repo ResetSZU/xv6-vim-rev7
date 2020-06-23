@@ -42,11 +42,13 @@ void readCharFromScreen(char* ichar);
 void movePosRight();
 void movePosLeft();
 void movePosUp();
-void movePosDonw();
+void movePosDown();
 void showAllTextToScreen(row**);
 void RefreshScreenKpos();
 void freeAllBuffer();
 int  getFileSize(char* filename);
+inline int max(int lhs,int rhs) { return lhs>rhs?lhs:rhs;};
+inline int min(int lhs,int rhs) { return lhs<rhs?lhs:rhs;};
 
 //=====================================主程序===============================================
 
@@ -158,15 +160,17 @@ void RefreshScreenKpos()
 void RefreshScreen()
 {
     clearScreen();
-    showAllTextToScreen(Text.content);
+    showAllTextToScreen(Text.BeginRow);
    // printf(1,"refresh screen successfully\n");
 }
 
 void showAllTextToScreen(row** BeginRow)
 {
-    for(;(*BeginRow)!=NULL;BeginRow++)
+    int showRow = 0;
+    for(;showRow<ScreenMaxRow && (*BeginRow)!=NULL;showRow++, BeginRow++)
     {
-        showTextToScreen((*BeginRow)->Tchars);
+       // setCursorPos(ScreenMaxcol*showRow);
+        showTextToScreen((*BeginRow)->Tchars,(*BeginRow)->size);
     }
 }
 
@@ -250,9 +254,7 @@ void editorInsert()
             return;
         default:
             insertChar(ichar);
-            pos = getCursorPos();
-            RefreshScreen();
-            setCursorPos(pos);
+            RefreshScreenKpos();
           //  printf(1,"this is insert default  %d\n",unichar);
             break;
         }
@@ -266,11 +268,11 @@ void movePosRight()
     int trow = tpos/ScreenMaxcol;
     int tcol = tpos - trow*ScreenMaxcol;
    // printf(1,"this is right %d %d %d %d %d\n",Text.BeginRow-Text.content,trow,Text.TextMallocRow,tcol,Text.BeginRow[trow]->Tchars[tcol]);
-    if(Text.BeginRow-Text.content+trow>=Text.TextMallocRow-1 && tcol>=Text.content[trow]->size-1)
+    if(Text.BeginRow-Text.content+trow>=Text.TextMallocRow-1 && tcol>=Text.BeginRow[trow]->size-1)
     {
         return ;
     }
-    if(tcol==ScreenMaxcol-1 || Text.BeginRow[trow]->Tchars[tcol]=='\n')
+    if(tcol==ScreenMaxcol-1 || Text.BeginRow[trow]->Tchars[tcol]=='\n' || tcol==Text.BeginRow[trow]->size)
     {
         trow += 1;
         tcol = 0;
@@ -298,7 +300,7 @@ void movePosLeft()
     if(tcol<0)
     {
         trow -= 1;
-        tcol = Text.content[trow]->size - 1;
+        tcol = Text.BeginRow[trow]->size - 1;
     }
     if(trow<0)
     {
@@ -313,16 +315,19 @@ void movePosUp()
     int tpos = getCursorPos();
     int trow = tpos/ScreenMaxcol;
     int tcol = tpos - trow*ScreenMaxcol;
+    int flagRefresh = 0;
     if(trow==0)
     {
         if(Text.BeginRow == Text.content)
             return ;
         Text.BeginRow -= 1;
+        flagRefresh = 1;
     }else
         trow -= 1;
-    while (tcol>0 && Text.BeginRow[trow]->Tchars[tcol]=='\0')
-        tcol -= 1;
+    tcol = min(tcol,Text.BeginRow[trow]->size-1);
     setCursorPos(ScreenMaxcol*trow + tcol);
+    if(flagRefresh)
+        RefreshScreenKpos();
 }
 
 void movePosDown()
@@ -330,15 +335,20 @@ void movePosDown()
     int tpos = getCursorPos();
     int trow = tpos/ScreenMaxcol;
     int tcol = tpos - trow*ScreenMaxcol;
+    int flagRefresh = 0;
     if(Text.BeginRow-Text.content+trow>=Text.TextMallocRow-1)
         return ;
     if(trow == ScreenMaxRow-1)
+    {
         Text.BeginRow += 1;
+        flagRefresh = 1;
+    }
     else
         trow += 1;
-    while (tcol>0 && Text.BeginRow[trow]->Tchars[tcol]=='\0')
-        tcol -= 1;
+    tcol = min(tcol,Text.BeginRow[trow]->size-1);
     setCursorPos(ScreenMaxcol*trow + tcol);
+    if(flagRefresh)
+        RefreshScreenKpos();
 }
 
 void insertChar(char ichar)
@@ -346,15 +356,20 @@ void insertChar(char ichar)
     int pos = getCursorPos();
     int trow = pos/ScreenMaxcol,tcol = pos%ScreenMaxcol;
     row* Currow = Text.BeginRow[trow];
+    printf(1,"this is row %d  col %d\n",trow,tcol);
+    printf(1,"%s",Currow->Tchars);
+    printf(1,"%s",Text.content[0]->Tchars);
+    printf(1,"%s",Text.BeginRow[0]->Tchars);
     switch (ichar)
     {
     case '\n':  //这里需要判断是不是段尾，所以很麻烦
         memmove(TmpBufferRow.Tchars,Currow->Tchars+tcol,Currow->size-tcol);
-        TmpBufferRow.size = Currow->size;
+        TmpBufferRow.size = Currow->size-tcol;
         if(Currow->Tchars[Currow->size-1]=='\n')
         {
             Text.BeginRow[trow]->Tchars[tcol] = '\n';
             memset(Currow->Tchars+tcol+1,'\0',ScreenMaxcol-tcol-1);
+            Text.BeginRow[trow]->size = tcol+1;
             newLine(Text.BeginRow+trow+1);
             memmove(Text.BeginRow[trow+1]->Tchars,TmpBufferRow.Tchars,TmpBufferRow.size);
             Text.BeginRow[trow+1]->size = TmpBufferRow.size;
@@ -364,9 +379,9 @@ void insertChar(char ichar)
             memset(Currow->Tchars+tcol+1,'\0',ScreenMaxcol-tcol-1);
             moveNchars(TmpBufferRow.size,trow+1,tcol);
             memmove(Text.BeginRow[trow+1]->Tchars,TmpBufferRow.Tchars,TmpBufferRow.size);
-
         }
-        setCursorPos((trow+1)*ScreenMaxcol);
+        setCursorPos(trow*ScreenMaxcol);
+        movePosDown();
         break;
     case '\t':
         memset(TmpBufferRow.Tchars,' ',TabLength);
@@ -391,6 +406,7 @@ void newLine(row** irow)
         Text.content[i+1] = Text.content[i];
     }
     (*irow) = malloc(sizeof(row));
+    (*irow)->size = 0;
     (*irow)->Tchars = malloc(ScreenMaxcol);
     memset((*irow)->Tchars,'\0',ScreenMaxcol);
     Text.TextMallocRow += 1;
@@ -408,11 +424,12 @@ void moveNchars(int n,int trow,int tcol)
     {
         if(brow[trow] == NULL)
         {
-            brow[trow] = malloc(sizeof(row));
-            brow[trow]->Tchars = malloc(ScreenMaxcol);
-            brow[trow]->size = 0;
-            Text.TextMallocRow += 1;
-            brow[trow+1] = NULL;
+            newLine(brow);
+            if(trow>=ScreenMaxRow)
+            {
+                Text.BeginRow = (brow += trow-ScreenMaxRow+1);
+                trow = ScreenMaxRow-1;
+            }
         }
         char* tchar = brow[trow]->Tchars;
         int tsize = brow[trow]->size;
@@ -437,6 +454,11 @@ void moveNchars(int n,int trow,int tcol)
                 newLine(brow+trow+1);
                 memmove(brow[trow+1]->Tchars,TmpBufferRow.Tchars,TmpBufferRow.size);
                 brow[trow+1]->size = TmpBufferRow.size;
+                if(trow>=ScreenMaxRow)
+                {
+                    Text.BeginRow = (brow += trow-ScreenMaxRow+1);
+                    trow = ScreenMaxRow-1;
+                }
                 break; ;
             }
             tcol = 0;trow += 1;
