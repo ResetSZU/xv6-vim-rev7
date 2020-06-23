@@ -21,17 +21,23 @@ typedef struct editorText
 {
     row** content; // 这里我们采用二维数组的方式存储内容，不想太麻烦了
     uint size;  //文本长度
-    uint Textrow;//文本实际行数
     uint TextMallocRow; //文本申请行数
     row** BeginRow;//屏幕第一行对应文本的位置，上下翻页
-    char* AcitveChar; //光标动作发生处
     row bottomMsg; // 这里就是底部状态栏了
     uchar TextDirty;  //若没有修改文本，则不写，节约读写
     //后面看喜欢加吧
 }editorText;
 
+typedef struct editorTextPool
+{
+    row** content;
+    uint TextPoolRow; //池子擁有行数
+}editorTextPool;
+
 static editorText Text;
+static editorTextPool TextPool;
 static row TmpBufferRow; 
+
 //=====================================这里就是定义函数了==================================
 
 void ReadfromFile(char*fileName);
@@ -89,19 +95,20 @@ void ReadfromFile(char*fileName)
 {
     printf(1,"read file successfully\n");
     int fd = 0, filesize = -1;
+    //這裏初始化池子
+    TextPool.content = malloc(sizeof(row*)*FileMaxrowLen);
+    TextPool.TextPoolRow = 0;
+    //這裏初始化文本
+    Text.content = malloc(sizeof(row*)*FileMaxrowLen);
+    Text.TextMallocRow = 0;
     if(fileName==NULL || (fd = open(fileName, O_RDONLY))<0)
     {
         printf(1,"open error! %d \n",fd);
-        Text.content = malloc(sizeof(row*)*FileMaxrowLen);
-        Text.content[0] = NULL;
-        Text.TextMallocRow = 0;
-        Text.Textrow = 0;
         Text.size = 0;
     }else
     {
         filesize = getFileSize(fileName);
         //这里就是初始化Text的地方,
-        Text.content = malloc(sizeof(row*)*FileMaxrowLen);
         char* allText = malloc(filesize);
         Text.size = read(fd,allText,filesize);
         int rowcnt = 0,Textpos=0;
@@ -109,8 +116,8 @@ void ReadfromFile(char*fileName)
         {
             if(Textpos>=Text.size)
                 break;
-            Text.content[rowcnt] = malloc(sizeof(row));
-            char* tchar = malloc(ScreenMaxcol);
+            newLine(Text.content+rowcnt);
+            char* tchar = Text.content[rowcnt]->Tchars;
             int i = 0;
             for(;i<ScreenMaxcol && Textpos<Text.size;i++,Textpos++)
             {
@@ -123,11 +130,8 @@ void ReadfromFile(char*fileName)
                 }
             }
             Text.content[rowcnt]->size = i;
-            Text.content[rowcnt]->Tchars = tchar;
             rowcnt += 1;
         }
-        Text.TextMallocRow = rowcnt ;
-        Text.content[rowcnt] = NULL;
         Text.BeginRow = Text.content;
         free(allText);
         close(fd);
@@ -183,9 +187,16 @@ void freeAllBuffer()
     for(int i=0;i<Text.TextMallocRow && tcontent[i]!=NULL;++i)
     {
         free(tcontent[i]->Tchars);
-        tcontent[i]->Tchars = NULL;
-        tcontent[i]->size = 0;
+        free(tcontent[i]);
     }
+    //釋放池子
+    for(int i=0;i<TextPool.TextPoolRow;++i)
+    {
+        free(TextPool.content[i]->Tchars);
+        free(TextPool.content[i]);
+    }
+    free(tcontent);
+    free(TextPool.content);
 }
 
 
@@ -373,7 +384,7 @@ void insertChar(char ichar)
         {
             Text.BeginRow[trow]->Tchars[tcol] = '\n';
             memset(Currow->Tchars+tcol+1,'\0',ScreenMaxcol-tcol-1);
-            moveNchars(TmpBufferRow.size,trow+1,tcol);
+            moveRightNchars(TmpBufferRow.size,trow+1,tcol);
             memmove(Text.BeginRow[trow+1]->Tchars,TmpBufferRow.Tchars,TmpBufferRow.size);
         }
         setCursorPos(trow*ScreenMaxcol);
@@ -382,7 +393,7 @@ void insertChar(char ichar)
     case '\t':
         memset(TmpBufferRow.Tchars,' ',TabLength);
         TmpBufferRow.size = TabLength;
-        moveNchars(4,trow,tcol);
+        moveRightNchars(4,trow,tcol);
         pos += 4;
         if(pos>=ScreenMaxLen)
         {
@@ -394,7 +405,7 @@ void insertChar(char ichar)
     default:
         TmpBufferRow.Tchars[0] = ichar;
         TmpBufferRow.size = 1;
-        moveNchars(1,trow,tcol);
+        moveRightNchars(1,trow,tcol);
         pos += 1;
         if(pos>=ScreenMaxLen)
         {
@@ -413,18 +424,43 @@ void newLine(row** irow)
     {
         Text.content[i+1] = Text.content[i];
     }
-    (*irow) = malloc(sizeof(row));
+    if(TextPool.TextPoolRow>0)
+    {
+        TextPool.TextPoolRow -= 1;
+        (*irow) = TextPool.content[TextPool.TextPoolRow];
+        TextPool.content[TextPool.TextPoolRow] = NULL;
+    }else
+    {
+        (*irow) = malloc(sizeof(row));
+        (*irow)->Tchars = malloc(ScreenMaxcol);
+        (*irow)->colors = malloc(ScreenMaxcol);
+    }
     (*irow)->size = 0;
-    (*irow)->Tchars = malloc(ScreenMaxcol);
     memset((*irow)->Tchars,'\0',ScreenMaxcol);
+    memset((*irow)->colors,'\0',ScreenMaxcol);
     Text.TextMallocRow += 1;
 }
 
+void deleteLine(row** irow)
+{
+    if(TextPool.TextPoolRow<FileMaxrowLen)
+    {
+        TextPool.content[TextPool.TextPoolRow] = *irow;
+        TextPool.TextPoolRow += 1;
+    }else
+    {
+        free((*irow)->Tchars);
+        free((*irow)->colors);
+        free(*irow);
+    }
+    for(int i=irow-Text.content;i<Text.TextMallocRow;++i)
+        Text.content[i] = Text.content[i+1];
+    Text.TextMallocRow -= 1;
+}
 //BeginRow爲base,在行列处移動n个字符
-void moveNchars(int n,int trow,int tcol)
+void moveRightNchars(int n,int trow,int tcol)
 {
     //memmove(void *dst, const void *src, uint n)
-  //  printf(1,"movechar %d\n",n);
     row** brow = Text.BeginRow;
     char tmprow[ScreenMaxcol] ;
     int tmpRowSize = 0;
@@ -472,5 +508,16 @@ void moveNchars(int n,int trow,int tcol)
             tcol = 0;trow += 1;
         }
         
+    }
+}
+
+void moveLeftNchars(int n,int trow,int tcol)
+{
+    row** brow = Text.BeginRow;
+    char tmprow[ScreenMaxcol] ;
+    int tmpRowSize = 0;
+    while(1)
+    {
+
     }
 }
