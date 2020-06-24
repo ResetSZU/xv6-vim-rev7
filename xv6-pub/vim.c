@@ -1,5 +1,10 @@
 /*
+    打开vim后，我一般使用hw.c来测试！
 
+    一开始是命令模式，也就是可以行首/查找字符串/翻页/删除/粘贴等等
+    在命令模式下输入　‘：’　　会进入ＥＸ模式，也就是可以输入q!,wq等命令退出和保存，利用ESC进入命令模式
+    在命令模式下输入　‘ｉ’   进入编辑模式，BACKSPACE不能删除，Delete才是删除键记住！，利用ESC进入命令模式
+    
 */
 
 #include "types.h"
@@ -60,19 +65,22 @@ void ExitProcess();
 void editorEx();
 void editorInsert();
 void freeAllBuffer();
-void ExitProcess();
 
 //光标移动的函数
-void movePosRight();
-void movePosLeft();
-void movePosUp();
-void movePosDown();
+int movePosRight();
+int movePosLeft();
+int movePosUp();
+int movePosDown();
 
 void readCharFromScreen(char*,int);
 void setBottomMsg(const char*,int);
 void Command_w();
 
+int isAlpha(char);
 int itoa (int n,char* s);
+void kmpPrefixFunction(char *,int ,char *);
+void kmpMatch(char * ,int ,char * ,int );
+
 inline int max(int lhs,int rhs) { return lhs>rhs?lhs:rhs;};
 inline int min(int lhs,int rhs) { return lhs<rhs?lhs:rhs;};
 
@@ -235,8 +243,11 @@ void ProcessKeyPress()
     //这里是初始模式,:进入命令模式，i进入编辑模式
     char ichar ;
     readCharFromScreen(&ichar,1);
+    unsigned char uichar = (unsigned char)(ichar);
     const char*msg = "";
-    switch (ichar)
+    int nowPos = getCursorPos();
+    int trow = nowPos/ScreenMaxcol,tcol = nowPos-trow*ScreenMaxcol;
+    switch (uichar)
     {
     case 'i':
      //   printf(1,"enter insert mode\n");
@@ -246,8 +257,33 @@ void ProcessKeyPress()
         editorInsert();
         break;
     case ':':
-        Text.activatePos = getCursorPos();
+        Text.activatePos = nowPos;
         editorEx();
+        break;
+    case VIM_UP:
+        movePosUp();
+        break;
+    case VIM_DOWN:
+        movePosDown();
+        break;
+    case VIM_LEFT:
+        movePosLeft();
+        break;
+    case VIM_RIGHT:
+        movePosRight();
+        break;
+    case '0':                         //下列三个是行首/下一行首/上一行首
+        command_row(NULL);
+        break;
+    case '-':
+        command_row(movePosUp);
+        break;
+    case '+':
+        command_row(movePosDown);
+        break;
+    case 'w':
+    case 'W':
+        command_nextWord();
         break;
     default:
 
@@ -255,6 +291,41 @@ void ProcessKeyPress()
     }
  //   printf(1,"deal with input successfully\n");
 
+}
+
+void command_nextWord()
+{
+    int nowPos,trow,tcol;
+    for(;;movePosRight())
+    {
+        nowPos = getCursorPos();
+        trow = nowPos/ScreenMaxcol,tcol=nowPos-trow*ScreenMaxcol;
+        if(!isAlpha(Text.BeginRow[trow]->Tchars[tcol]))
+            break;
+    }
+    for(;;movePosRight())
+    {
+        nowPos = getCursorPos();
+        trow = nowPos/ScreenMaxcol,tcol=nowPos-trow*ScreenMaxcol;
+        if(isAlpha(Text.BeginRow[trow]->Tchars[tcol]))
+            break;
+    }
+}
+
+void command_row(int(*p)(void))
+{
+    if(p!=NULL)
+        p();
+    int nowPos = getCursorPos();
+    int trow = nowPos/ScreenMaxcol,tcol;
+    for(tcol=0;tcol<Text.BeginRow[trow]->size-1 &&
+        Text.BeginRow[trow]->Tchars[tcol]==' ';tcol++);
+    setCursorPos(trow*ScreenMaxcol+tcol);
+}
+
+int isAlpha(char c)
+{
+    return (c>='a' && c<='z') || (c>='A' && c<='Z');
 }
 
 void initEditor()
@@ -319,7 +390,7 @@ void editorInsert()
 }
 //==============================這裏是光標的移動呀START＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝
 //这个就是光标右移动
-void movePosRight()
+int movePosRight()
 {
     int tpos = getCursorPos();
     int trow = tpos/ScreenMaxcol;
@@ -328,7 +399,7 @@ void movePosRight()
    // printf(1,"this is right %d %d %d %d %d\n",Text.BeginRow-Text.content,trow,Text.TextMallocRow,tcol,Text.BeginRow[trow]->Tchars[tcol]);
     if(Text.BeginRow-Text.content+trow>=Text.TextMallocRow-1 && tcol>=Text.BeginRow[trow]->size-1)
     {
-        return ;
+        return 0;
     }
     if(tcol==Text.BeginRow[trow]->size-1)
     {
@@ -349,16 +420,17 @@ void movePosRight()
     updateBottomPos();
     if(flagRefresh)
         RefreshScreenKpos();
+    return 1;
 }
 
-void movePosLeft()
+int movePosLeft()
 {
     int tpos = getCursorPos();
     int trow = tpos/ScreenMaxcol;
     int tcol = tpos - trow*ScreenMaxcol;
     int flagRefresh = 0;
     if(Text.BeginRow == Text.content && tpos == 0 )
-        return ;
+        return 0;
     tcol -= 1;
     if(tcol<0)
     {
@@ -375,9 +447,10 @@ void movePosLeft()
     updateBottomPos();
     if(flagRefresh)
         RefreshScreenKpos();
+    return 1;
 }
 
-void movePosUp()
+int movePosUp()
 {
     int tpos = getCursorPos();
     int trow = tpos/ScreenMaxcol;
@@ -386,7 +459,7 @@ void movePosUp()
     if(trow==0)
     {
         if(Text.BeginRow == Text.content)
-            return ;
+            return 0;
         Text.BeginRow -= 1;
         flagRefresh = 1;
     }else
@@ -396,16 +469,17 @@ void movePosUp()
     updateBottomPos();
     if(flagRefresh)
         RefreshScreenKpos();
+    return 1;
 }
 
-void movePosDown()
+int  movePosDown()
 {
     int tpos = getCursorPos();
     int trow = tpos/ScreenMaxcol;
     int tcol = tpos - trow*ScreenMaxcol;
     int flagRefresh = 0;
     if(Text.BeginRow-Text.content+trow>=Text.TextMallocRow-1)
-        return ;
+        return 0;
     if(trow == ScreenMaxRow-1)
     {
         Text.BeginRow += 1;
@@ -418,6 +492,7 @@ void movePosDown()
     updateBottomPos();
     if(flagRefresh)
         RefreshScreenKpos();
+    return 1;
 }
 
 //==============================這裏是光標的移動呀END＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝
@@ -516,12 +591,7 @@ void editorEx()
             Command_w();
         }else
         {
-            msg = ":Not an editor command  :";
-            memmove(TmpBufferRow.Tchars,msg,strlen(msg));
-            memmove(TmpBufferRow.Tchars+strlen(msg),ichar,strlen(ichar));
-            TmpBufferRow.size = strlen(msg)+strlen(ichar);
-            setBottomMsg(TmpBufferRow.Tchars,TmpBufferRow.size);
-            setCursorPos(Text.activatePos);
+            Command_error(ichar);
             break;
           //  printf(1,"%d   %d cmp fail !!!\n",strlen(ichar),strlen("q\0"));
         }
@@ -530,6 +600,16 @@ void editorEx()
     }
     onScreenflag(1,0,0);
 }
+void Command_error(char* ichar)
+{
+    char *msg = ":Not an editor command  :";
+    memmove(TmpBufferRow.Tchars,msg,strlen(msg));
+    memmove(TmpBufferRow.Tchars+strlen(msg),ichar,strlen(ichar));
+    TmpBufferRow.size = strlen(msg)+strlen(ichar);
+    setBottomMsg(TmpBufferRow.Tchars,TmpBufferRow.size);
+    setCursorPos(Text.activatePos);
+}
+
 void Command_w()
 {
     WriteToFile(fileName);
@@ -777,3 +857,53 @@ int itoa (int n,char* s)
   }
   return i;
 }
+
+
+//KMP匹配算法
+
+void kmpMatch(char * s,int sLength,char * p,int pLength)
+{
+    char* prefix = TmpBufferRow.Tchars;
+    kmpPrefixFunction(p,pLength,prefix);
+    int pPoint=0;
+    for(int i=0; i<=sLength-pLength;i++)
+    {
+ 
+ 
+        while(pPoint!=0&&(s[i]!=p[pPoint]))
+        {
+            pPoint = prefix[pPoint-1];
+        }
+        if(s[i]==p[pPoint])
+        {
+            pPoint++;
+            if(pPoint == pLength)
+            {
+                printf("找到:%d \n",i-pPoint+1);
+                //pPoint = 0;//上一个在s匹配的字符串,不能成为下一个匹配字符串的一部分
+                pPoint=prefix[pPoint-1];//上一个在s匹配的字符串,也能成为下一个匹配字符串的一部分
+            }
+        }
+ 
+ 
+    }
+}
+ 
+void kmpPrefixFunction(char *p,int length,char *prefix)
+{
+    prefix[0]=0;
+    int k = 0;//前缀的长度
+    for(int i=1; i<length; i++)
+    {
+        while(k>0&&p[k]!=p[i])
+        {
+            k=prefix[k-1];
+        }
+        if(p[k]==p[i])//说明p[0...k-1]共k个都匹配了
+        {
+            k=k+1;
+        }
+        prefix[i]=k;
+    }
+}
+
