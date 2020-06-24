@@ -1,9 +1,14 @@
-#define ScreenMaxRow 25 
+#define ScreenMaxRow 24
 #define ScreenMaxcol 80
-#define ScreenMaxLen (ScreenMaxRow*ScreenMaxcol)
+#define ScreenTextMaxLen (ScreenMaxRow*ScreenMaxcol)
+#define ScreenMaxLen ((ScreenMaxRow+1)*ScreenMaxcol)
 #define FileMaxrowLen 100
 #define NULL 0
 #define TabLength 4
+
+#define EDIT_MODE 1
+#define COMMAND_MDOE 2
+#define EX_MODE
 
 
 #define VIM_UP			226	// -30 cursor key Up
@@ -20,3 +25,4 @@
 #define VIM_ESC		27
 #define VIM_TAB		9
 #define VIM_ENTER		10
+

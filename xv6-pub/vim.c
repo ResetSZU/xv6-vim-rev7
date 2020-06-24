@@ -26,6 +26,7 @@ typedef struct editorText
     row bottomMsg; // 这里就是底部状态栏了
     uchar TextDirty;  //若没有修改文本，则不写，节约读写
     //后面看喜欢加吧
+    int activatePos;
 }editorText;
 
 typedef struct editorTextPool
@@ -37,22 +38,41 @@ typedef struct editorTextPool
 static editorText Text;
 static editorTextPool TextPool;
 static row TmpBufferRow; 
+static char editorMode ; //這個是判斷處於什麼模式：編輯模式/命令模式/ＥＸ模式
+static char* fileName;
 
 //=====================================这里就是定义函数了==================================
 
-void ReadfromFile(char*fileName);
+//读写文件函数
+void ReadfromFile(char*);
+void WriteToFile(char*);
+int  getFileSize(char* );
+
+//对于刷新屏幕做了不同的封装
 void RefreshScreen();
-void ProcessKeyPress();
+void RefreshScreenKpos();
+void showAllTextToScreen(row**);
+
+//这里是关于主程序需要的一些
 void initEditor();
-void readCharFromScreen(char* ichar);
+void ProcessKeyPress();
+void ExitProcess();
+void editorEx();
+void editorInsert();
+void freeAllBuffer();
+void ExitProcess();
+
+//光标移动的函数
 void movePosRight();
 void movePosLeft();
 void movePosUp();
 void movePosDown();
-void showAllTextToScreen(row**);
-void RefreshScreenKpos();
-void freeAllBuffer();
-int  getFileSize(char* filename);
+
+void readCharFromScreen(char*,int);
+void setBottomMsg(const char*,int);
+void Command_w();
+
+int itoa (int n,char* s);
 inline int max(int lhs,int rhs) { return lhs>rhs?lhs:rhs;};
 inline int min(int lhs,int rhs) { return lhs<rhs?lhs:rhs;};
 
@@ -67,13 +87,13 @@ int main(int argc, char **argv)
         exit();
     }    
     TmpBufferRow.Tchars = malloc(ScreenMaxcol);
-    char* fileName = argv[1];
+    fileName = argv[1];
 
     //這裏好像要保存原來的screen內容，看情況吧
     ReadfromFile(fileName);
     initEditor();
     //这个是让即时读取输入
-    onScreenflag(1,0);
+    onScreenflag(1,0,0);
     RefreshScreen();
     while(1)
     {
@@ -81,11 +101,9 @@ int main(int argc, char **argv)
         ProcessKeyPress();
     //    RefreshScreen();
     }
-    freeAllBuffer();
-    onScreenflag(0,1);
+    ExitProcess();
     //可能要写文本，还原，重设光标，不知道放在哪里比较好
     //也许是process里面？
-    exit();
 }
 
 
@@ -143,13 +161,25 @@ void ReadfromFile(char*fileName)
     return ;
 }
 
+void WriteToFile(char* filename)
+{
+    int fd = 0;
+    if(filename == NULL)
+        filename = "noName.txt";
+    fd = open(filename,O_WRONLY|O_CREATE);
+    for(int i=0;i<Text.TextMallocRow;++i)
+        write(fd,Text.content[i]->Tchars,Text.content[i]->size);
+    close(fd);
+    Text.TextDirty = 0;
+}
+
 int getFileSize(char* filename)
 {
     //这里就是根据stat这个结构来得到size
     struct stat stat_file;
     int filesize = -1;
     if (stat(filename, &stat_file) <0  || stat_file.type != 2)
-        exit();
+        filesize = -1;
     filesize = (int) stat_file.size;
     return filesize;
 }
@@ -204,18 +234,23 @@ void ProcessKeyPress()
 {
     //这里是初始模式,:进入命令模式，i进入编辑模式
     char ichar ;
-    readCharFromScreen(&ichar);
+    readCharFromScreen(&ichar,1);
+    const char*msg = "";
     switch (ichar)
     {
     case 'i':
      //   printf(1,"enter insert mode\n");
+        msg = "--INSERT--";
+        setBottomMsg(msg,strlen(msg));
+        updateBottomPos();
         editorInsert();
         break;
     case ':':
-      //  editorCommond();
+        Text.activatePos = getCursorPos();
+        editorEx();
         break;
-    
     default:
+
         break;
     }
  //   printf(1,"deal with input successfully\n");
@@ -226,13 +261,22 @@ void initEditor()
 {
     Text.BeginRow = Text.content;
     Text.bottomMsg.Tchars = malloc(ScreenMaxcol);
+    Text.bottomMsg.colors = malloc(ScreenMaxcol);
+    memset(Text.bottomMsg.Tchars,'\0',ScreenMaxcol);
     Text.bottomMsg.size = ScreenMaxcol;
+    editorMode = COMMAND_MDOE;
     clearScreen();
   //  printf(1,"init screen successfully\n");
 }
-void readCharFromScreen(char* ichar)
+void readCharFromScreen(char* ichar,int oneflag)
 {
-    read(0,ichar,1);
+    if(oneflag)
+        read(0,ichar,1);
+    else
+    {
+        gets(ichar,ScreenMaxcol);
+    }
+    
    // printf(1,"%c ------- read input from screen successfully\n",*ichar);
 }
 
@@ -244,7 +288,7 @@ void editorInsert()
     char ichar ;
     while(1)
     {
-        readCharFromScreen(&ichar);
+        readCharFromScreen(&ichar,1);
         unsigned char unichar = (unsigned char)(ichar);
         int pos = getCursorPos();
         switch (unichar)
@@ -265,6 +309,7 @@ void editorInsert()
             return;
         default:
             insertChar(ichar);
+            Text.TextDirty = 1;
             RefreshScreenKpos();
           //  printf(1,"this is insert default  %d\n",unichar);
             break;
@@ -272,7 +317,7 @@ void editorInsert()
     }
   //  RefreshScreen();
 }
-//==============================這裏是光標的移動呀＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝
+//==============================這裏是光標的移動呀START＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝
 //这个就是光标右移动
 void movePosRight()
 {
@@ -301,6 +346,7 @@ void movePosRight()
         flagRefresh = 1;
     }
     setCursorPos(ScreenMaxcol*trow + tcol);
+    updateBottomPos();
     if(flagRefresh)
         RefreshScreenKpos();
 }
@@ -326,6 +372,7 @@ void movePosLeft()
         flagRefresh = 1;
     }
     setCursorPos(ScreenMaxcol*trow + tcol);
+    updateBottomPos();
     if(flagRefresh)
         RefreshScreenKpos();
 }
@@ -346,6 +393,7 @@ void movePosUp()
         trow -= 1;
     tcol = min(tcol,Text.BeginRow[trow]->size-1);
     setCursorPos(ScreenMaxcol*trow + tcol);
+    updateBottomPos();
     if(flagRefresh)
         RefreshScreenKpos();
 }
@@ -367,11 +415,12 @@ void movePosDown()
         trow += 1;
     tcol = min(tcol,Text.BeginRow[trow]->size-1);
     setCursorPos(ScreenMaxcol*trow + tcol);
+    updateBottomPos();
     if(flagRefresh)
         RefreshScreenKpos();
 }
 
-//==============================這裏是光標的移動呀＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝
+//==============================這裏是光標的移動呀END＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝
 
 void insertChar(char ichar)
 {
@@ -408,12 +457,8 @@ void insertChar(char ichar)
         TmpBufferRow.size = TabLength;
         moveRightNchars(4,trow,tcol);
         pos += 4;
-        if(pos>=ScreenMaxLen)
-        {
-            setCursorPos(pos-ScreenMaxcol);
-            movePosDown();
-        }else
-            setCursorPos(pos);
+        for(int i=0;i<TabLength;++i)
+            movePosRight();
         break;
     case VIM_DELETE:
         moveLeftNchars(1,trow,tcol);
@@ -427,6 +472,83 @@ void insertChar(char ichar)
         break;
     }
     
+}
+
+void editorEx()
+{
+    onScreenflag(0,1,1);
+    char ichar[ScreenMaxLen] ;
+    char* msg ;
+    setBottomMsg(":",1);
+    setCursorPos(ScreenTextMaxLen+1);
+    while (1)
+    {
+        readCharFromScreen(ichar,0);
+        setBottomMsg(":",1);
+        setCursorPos(ScreenTextMaxLen+1);
+       // printf(1,"------%s\n",ichar);
+        if(ichar[0]==VIM_ESC)
+        {
+            setCursorPos(Text.activatePos);
+            setBottomMsg("",0);
+            break;
+        }
+        else if(strcmp(ichar,"q\n")==0)
+        {
+            if(Text.TextDirty)
+            {
+                msg = "No write since last change (add ! to override)";
+                setBottomMsg(msg,strlen(msg));
+            }else
+            {
+                ExitProcess();
+            }
+            
+        }else if(strcmp(ichar,"q!\n")==0)
+        {
+            ExitProcess();
+        }else if(strcmp(ichar,"wq\n") == 0)
+        {
+            Command_w();
+            ExitProcess();
+        }else if(strcmp(ichar,"w\n") == 0)
+        {
+            Command_w();
+        }else
+        {
+            msg = ":Not an editor command  :";
+            memmove(TmpBufferRow.Tchars,msg,strlen(msg));
+            memmove(TmpBufferRow.Tchars+strlen(msg),ichar,strlen(ichar));
+            TmpBufferRow.size = strlen(msg)+strlen(ichar);
+            setBottomMsg(TmpBufferRow.Tchars,TmpBufferRow.size);
+            setCursorPos(Text.activatePos);
+            break;
+          //  printf(1,"%d   %d cmp fail !!!\n",strlen(ichar),strlen("q\0"));
+        }
+        
+        
+    }
+    onScreenflag(1,0,0);
+}
+void Command_w()
+{
+    WriteToFile(fileName);
+    char* msg = " are written";
+    memmove(TmpBufferRow.Tchars,fileName,strlen(fileName));
+    memmove(TmpBufferRow.Tchars+strlen(fileName),msg,strlen(msg));
+    TmpBufferRow.size = strlen(fileName)+strlen(msg);
+    setBottomMsg(TmpBufferRow.Tchars,TmpBufferRow.size);
+}
+
+
+void ExitProcess()
+{
+    //恢復備份
+    setBottomMsg("",0);
+    clearScreen();
+    freeAllBuffer();
+    onScreenflag(0,1,0);
+    exit();
 }
 
 void newLine(row** irow)
@@ -587,4 +709,71 @@ void moveLeftNchars(int n,int trow,int tcol)
         }
         
     }
+}
+
+void setBottomMsg(const char* stateMsg,int tlen)
+{
+    if(tlen != 0)
+    {
+        memset(Text.bottomMsg.Tchars,'\0',50);
+        memmove(Text.bottomMsg.Tchars,stateMsg,tlen);
+    }else
+    {
+        memset(Text.bottomMsg.Tchars,'\0',ScreenMaxcol);
+    }
+    
+    int nowPos = getCursorPos();
+    setCursorPos(ScreenMaxRow*ScreenMaxcol);
+    showTextToScreen(Text.bottomMsg.Tchars,Text.bottomMsg.size-1);
+    setCursorPos(nowPos);
+}
+
+//這個是更新底部右側坐標的是
+void updateBottomPos()
+{
+    int nowPos = getCursorPos();
+    int offset = 50;
+    //這裏是坐標
+    memset(Text.bottomMsg.Tchars+offset,'\0',ScreenMaxcol-offset);
+    offset += itoa(nowPos/ScreenMaxcol,Text.bottomMsg.Tchars+offset);
+    Text.bottomMsg.Tchars[offset++] = ',';
+    offset += itoa(nowPos%ScreenMaxcol,Text.bottomMsg.Tchars+offset);
+    offset = 75;
+    //這是裏百分比記號
+    if(Text.content == Text.BeginRow)
+        memmove(Text.bottomMsg.Tchars+offset,"Top",3);
+    else if(Text.BeginRow-Text.content+ScreenMaxRow>=Text.TextMallocRow)
+        memmove(Text.bottomMsg.Tchars+offset,"Bot",3);
+    else
+    {
+        int rate = 100*(Text.BeginRow-Text.content)/(Text.TextMallocRow-ScreenMaxRow);
+        if(rate <10)
+            offset+= 1;
+        offset += itoa(rate,Text.bottomMsg.Tchars+offset);
+        Text.bottomMsg.Tchars[offset++] = '%';
+    }
+    setCursorPos(ScreenMaxRow*ScreenMaxcol);
+    showTextToScreen(Text.bottomMsg.Tchars,Text.bottomMsg.size-1);
+    setCursorPos(nowPos);
+}
+
+int itoa (int n,char* s)
+{
+  int i,j,sign;
+  if((sign=n)<0)//记录符号
+  n=-n;//使n成为正数
+  i=0;
+  do{
+      s[i++]=n%10+'0';//取下一个数字
+  }
+  while ((n/=10)>0);//删除该数字
+  if(sign<0)
+  s[i++]='-';
+  for(int j=0;j<i/2;++j)
+  {
+    char tmp = s[j];
+    s[j] = s[i-1-j];
+    s[i-1-j] = tmp;
+  }
+  return i;
 }

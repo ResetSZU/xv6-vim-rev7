@@ -22,6 +22,7 @@ static int panicked = 0;
 
 static int onScreenBuffer = 0;
 static int onScreenShow = 1;
+static int StopEnter = 0;
 
 static struct {
   struct spinlock lock;
@@ -221,7 +222,7 @@ consoleintr(int (*getc)(void))
       if(c != 0 && input.e-input.r < INPUT_BUF){
         c = (c == '\r') ? '\n' : c;
         input.buf[input.e++ % INPUT_BUF] = c;
-        if(onScreenShow)
+        if(onScreenShow && (!StopEnter || (StopEnter && c!='\n')))
           consputc(c);
         if(onScreenBuffer ||  c == '\n' || c == C('D') || input.e == input.r+INPUT_BUF){
           input.w = input.e;
@@ -329,7 +330,7 @@ int getCursorPos()
 
 void clearScreen()
 {
-  memset(crt,0,sizeof(crt[0])*ScreenMaxLen);
+  memset(crt,0,sizeof(crt[0])*ScreenTextMaxLen);
   setCursorPos(0);
 }
 
@@ -337,19 +338,20 @@ void showTextToScreen(char* content,int tsize)
 {
   int pos = getCursorPos();
   int toffset = 0;
-  tsize = tsize<ScreenMaxLen?tsize:ScreenMaxLen;
+  tsize = tsize<ScreenTextMaxLen?tsize:ScreenTextMaxLen;
   for(;toffset<tsize && pos<ScreenMaxLen ;toffset++,pos++,content++)
   {
-    if((pos>=(ScreenMaxLen-ScreenMaxcol)) && ((*content)=='\n'))
+    if((pos>=(ScreenTextMaxLen-ScreenMaxcol)) && ((*content)=='\n'))
       break;
     cgaputc(*content);
   }
   return ;
 }
 
-void onScreenflag(int bufferflag,int showflag)
+void onScreenflag(int bufferflag,int showflag,int stopFlag)
 {
   onScreenBuffer = bufferflag;
   onScreenShow = showflag;
+  StopEnter = stopFlag;
   return ;
 }

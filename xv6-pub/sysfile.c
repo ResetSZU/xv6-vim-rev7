@@ -465,17 +465,18 @@ int sys_clearScreen(void)
 int sys_showTextToScreen(void)
 {
   char* content;
-  if(argstr(0,&content)<0)
+  int  tsize;
+  if(argstr(0,&content)<0,argint(1,&tsize))
     return -1;
-  showTextToScreen(content);
+  showTextToScreen(content,tsize);
   return 0;
 }
 
 int sys_onScreenflag(void)
 {
-  int bufferflag,showflag;
-	if(argint(0,&bufferflag)<0 || argint(1,&showflag)<0)
+  int bufferflag,showflag,stopflag;
+	if(argint(0,&bufferflag)<0 || argint(1,&showflag)<0 || argint(2,&stopflag))
 		return -1;
-	onScreenflag(bufferflag,showflag);
+	onScreenflag(bufferflag,showflag,stopflag);
 	return 0;
 }

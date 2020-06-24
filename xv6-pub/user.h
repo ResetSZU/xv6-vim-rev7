@@ -27,8 +27,8 @@ int uptime(void);
 //vim.c
 void setCursorPos(int);
 void clearScreen();
-void showTextToScreen(char*);
-void onScreenflag(int,int);
+void showTextToScreen(char*,int);
+void onScreenflag(int,int,int);
 int getCursorPos();
 
 
