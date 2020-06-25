@@ -43,6 +43,7 @@ typedef struct editorTextPool
 static editorText Text;
 static editorTextPool TextPool;
 static row TmpBufferRow; 
+static row MatchBufferRow;
 static char editorMode ; //這個是判斷處於什麼模式：編輯模式/命令模式/ＥＸ模式
 static char* fileName;
 
@@ -75,11 +76,12 @@ int movePosDown();
 void readCharFromScreen(char*,int);
 void setBottomMsg(const char*,int);
 void Command_w();
+void command_match(char*,int);
 
 int isAlpha(char);
 int itoa (int n,char* s);
 void kmpPrefixFunction(char *,int ,char *);
-void kmpMatch(char * ,int ,char * ,int );
+int kmpMatch(char * ,int ,char * ,int );
 
 inline int max(int lhs,int rhs) { return lhs>rhs?lhs:rhs;};
 inline int min(int lhs,int rhs) { return lhs<rhs?lhs:rhs;};
@@ -95,6 +97,7 @@ int main(int argc, char **argv)
         exit();
     }    
     TmpBufferRow.Tchars = malloc(ScreenMaxcol);
+    MatchBufferRow.Tchars = malloc(ScreenMaxcol);
     fileName = argv[1];
 
     //這裏好像要保存原來的screen內容，看情況吧
@@ -242,13 +245,16 @@ void ProcessKeyPress()
 {
     //这里是初始模式,:进入命令模式，i进入编辑模式
     char ichar ;
+    updateBottomPos();
     readCharFromScreen(&ichar,1);
     unsigned char uichar = (unsigned char)(ichar);
-    const char*msg = "";
+    char*msg = "";
     int nowPos = getCursorPos();
     int trow = nowPos/ScreenMaxcol,tcol = nowPos-trow*ScreenMaxcol;
     switch (uichar)
     {
+    case 'I':
+        command_row(NULL);
     case 'i':
      //   printf(1,"enter insert mode\n");
         msg = "--INSERT--";
@@ -281,16 +287,127 @@ void ProcessKeyPress()
     case '+':
         command_row(movePosDown);
         break;
+    case 'd':      //dd 两次才是删除当行，还有其他功能，不想写了
+        readCharFromScreen(&ichar,1);
+        if(ichar == 'd')
+        {
+            deleteLine(Text.BeginRow+trow);
+            if(trow +Text.BeginRow-Text.content == Text.TextMallocRow)
+                trow -= 1;
+            setCursorPos(trow*ScreenMaxcol);
+            command_row(NULL);
+            RefreshScreenKpos();
+        }
+        break;
+    case 'n':
+    case 'N':
+        command_match(MatchBufferRow.Tchars,MatchBufferRow.size);
+        break;
     case 'w':
     case 'W':
         command_nextWord();
         break;
+    case 'y':
+    case 'Y':   //拷贝行
+        memmove(TmpBufferRow.Tchars,Text.BeginRow[trow]->Tchars,Text.BeginRow[trow]->size);
+        memmove(TmpBufferRow.colors,Text.BeginRow[trow]->colors,Text.BeginRow[trow]->size);
+        TmpBufferRow.size = Text.BeginRow[trow]->size;
+        break;
+    case 'p':
+        trow += 1;
+    case 'P':
+        newLine(Text.BeginRow+trow);
+        memmove(Text.BeginRow[trow]->Tchars,TmpBufferRow.Tchars,TmpBufferRow.size);
+        memmove(Text.BeginRow[trow]->colors,TmpBufferRow.colors,TmpBufferRow.size);
+        Text.BeginRow[trow]->size = TmpBufferRow.size;
+        RefreshScreenKpos();
+        break;
+    case '/':
+        Text.activatePos = getCursorPos();
+        onScreenflag(0,1,1);
+        setBottomMsg("/",1);
+        setCursorPos(ScreenTextMaxLen+1);
+        readCharFromScreen(MatchBufferRow.Tchars,0);
+        MatchBufferRow.size = strlen(MatchBufferRow.Tchars);
+        MatchBufferRow.Tchars[MatchBufferRow.size-1] ='\0';
+        MatchBufferRow.size -= 1;
+        onScreenflag(1,0,0);
+        setCursorPos(nowPos);
+        command_match(MatchBufferRow.Tchars,MatchBufferRow.size);
+        break;
+    case CTRL_E:
+        if (Text.BeginRow-Text.content != Text.TextMallocRow-1)
+        {
+            Text.BeginRow += 1;
+            if(trow !=0)
+                trow -= 1;
+            else
+            {
+                while(tcol>=Text.BeginRow[trow]->size)
+                    tcol -= 1;
+            }
+            setCursorPos(trow*ScreenMaxcol+tcol);
+            RefreshScreenKpos();
+        }
+        break;
+    case CTRL_Y:
+        if(Text.BeginRow-Text.content != 0)
+        {
+            Text.BeginRow -= 1;
+            if(trow != ScreenMaxRow - 1)
+                trow += 1;
+            else
+            {
+                while(tcol>=Text.BeginRow[trow]->size)
+                    tcol -= 1;
+            }
+            setCursorPos(trow*ScreenMaxcol+tcol);
+            RefreshScreenKpos();
+        }
+        break;
+    case CTRL_F:
+        Text.BeginRow += min(ScreenMaxRow,Text.TextMallocRow-1+Text.content-Text.BeginRow);
+        trow = min(trow,Text.TextMallocRow+Text.content-1-Text.BeginRow);
+        setCursorPos(trow*ScreenMaxcol);
+        RefreshScreenKpos();
+        break;
+    case CTRL_B:
+        Text.BeginRow = max(Text.content,Text.BeginRow-ScreenMaxRow);
+        setCursorPos(trow*ScreenMaxcol);
+        RefreshScreenKpos();
+        break;
     default:
-
+     //   printf(1,"%d",uichar);
         break;
     }
  //   printf(1,"deal with input successfully\n");
 
+}
+
+void command_match(char* tar,int tarsize)
+{
+  //  printf(1,"--------%s\n",tar);
+    int nowPos = getCursorPos(),pos=-1;
+    int trow = nowPos/ScreenMaxcol,tcol=nowPos-trow*ScreenMaxcol+1;
+    for(;Text.BeginRow-Text.content+trow<Text.TextMallocRow;++trow)
+    {
+        row* crow = Text.BeginRow[trow];
+        pos = kmpMatch(crow->Tchars+tcol,crow->size-tcol,
+            tar,tarsize);
+     //   printf(1,"---------%d\n",pos);
+        if(pos!=-1)
+            break;
+        tcol = 0;
+    }
+    if(pos != -1)
+    {
+        if(trow>=ScreenMaxRow)
+        {
+            Text.BeginRow += (trow-ScreenMaxRow+1);
+            trow = ScreenMaxRow - 1;
+        }
+        setCursorPos(trow*ScreenMaxcol+pos+tcol);
+    }
 }
 
 void command_nextWord()
@@ -321,6 +438,7 @@ void command_row(int(*p)(void))
     for(tcol=0;tcol<Text.BeginRow[trow]->size-1 &&
         Text.BeginRow[trow]->Tchars[tcol]==' ';tcol++);
     setCursorPos(trow*ScreenMaxcol+tcol);
+    updateBottomPos();
 }
 
 int isAlpha(char c)
@@ -377,8 +495,10 @@ void editorInsert()
             movePosRight();
             break;
         case VIM_ESC:
-            return;
+            setBottomMsg("",0);
+            return ;
         default:
+          //  printf(1,"%d",unichar);
             insertChar(ichar);
             Text.TextDirty = 1;
             RefreshScreenKpos();
@@ -561,7 +681,7 @@ void editorEx()
         readCharFromScreen(ichar,0);
         setBottomMsg(":",1);
         setCursorPos(ScreenTextMaxLen+1);
-       // printf(1,"------%s\n",ichar);
+     //   printf(1,"------%d\n",ichar[0]);
         if(ichar[0]==VIM_ESC)
         {
             setCursorPos(Text.activatePos);
@@ -574,6 +694,11 @@ void editorEx()
             {
                 msg = "No write since last change (add ! to override)";
                 setBottomMsg(msg,strlen(msg));
+                onScreenflag(1,0,0);
+                readCharFromScreen(ichar,1);
+                onScreenflag(0,1,1);
+                setBottomMsg("",0);
+                setBottomMsg(":",1);
             }else
             {
                 ExitProcess();
@@ -668,7 +793,7 @@ void deleteLine(row** irow)
     }
     for(int i=irow-Text.content;i<Text.TextMallocRow;++i)
         Text.content[i] = Text.content[i+1];
-    Text.content[Text.TextMallocRow] = NULL;
+    Text.content[Text.TextMallocRow-1] = NULL;
     Text.TextMallocRow -= 1;
 }
 //BeginRow爲base,在行列处向右移動n个字符
@@ -812,6 +937,8 @@ void setBottomMsg(const char* stateMsg,int tlen)
 void updateBottomPos()
 {
     int nowPos = getCursorPos();
+    if(Text.activatePos == nowPos)
+        return ;
     int offset = 50;
     //這裏是坐標
     memset(Text.bottomMsg.Tchars+offset,'\0',ScreenMaxcol-offset);
@@ -835,6 +962,7 @@ void updateBottomPos()
     setCursorPos(ScreenMaxRow*ScreenMaxcol);
     showTextToScreen(Text.bottomMsg.Tchars,Text.bottomMsg.size-1);
     setCursorPos(nowPos);
+    Text.activatePos = nowPos;
 }
 
 int itoa (int n,char* s)
@@ -861,14 +989,18 @@ int itoa (int n,char* s)
 
 //KMP匹配算法
 
-void kmpMatch(char * s,int sLength,char * p,int pLength)
+int kmpMatch(char * s,int sLength,char * p,int pLength)
 {
+    if(sLength<=0 || pLength <= 0)
+        return -1;
     char* prefix = TmpBufferRow.Tchars;
     kmpPrefixFunction(p,pLength,prefix);
     int pPoint=0;
-    for(int i=0; i<=sLength-pLength;i++)
+    p[pLength] = '\0';
+  //  printf(1,"%s  %d\n",s,sLength);
+    for(int i=0; i<sLength;i++)
     {
- 
+    //    printf(1,"%c   %c\n",s[i],p[pPoint]);
  
         while(pPoint!=0&&(s[i]!=p[pPoint]))
         {
@@ -879,14 +1011,15 @@ void kmpMatch(char * s,int sLength,char * p,int pLength)
             pPoint++;
             if(pPoint == pLength)
             {
-                printf("找到:%d \n",i-pPoint+1);
+            //    printf(1,"find :%d \n",i-pPoint+1);
+                return (i-pPoint+1);
                 //pPoint = 0;//上一个在s匹配的字符串,不能成为下一个匹配字符串的一部分
                 pPoint=prefix[pPoint-1];//上一个在s匹配的字符串,也能成为下一个匹配字符串的一部分
             }
         }
- 
- 
     }
+    //printf(1,"Not find\n");
+    return -1;
 }
  
 void kmpPrefixFunction(char *p,int length,char *prefix)
