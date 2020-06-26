@@ -28,6 +28,8 @@ typedef struct Regexitem
 {
     char* Tchars;
     int color;
+    int headoffset;
+    int tailoffset;
 }Regexitem;
 
 typedef struct RegexArray
@@ -122,7 +124,7 @@ int main(int argc, char **argv)
 
     //這裏好像要保存原來的screen內容，看情況吧
     ReadFromFile(fileName);
-   // ReadFromRegex("Regex.txt");
+    ReadFromRegex("Regex.txt");
     initEditor();
     //这个是让即时读取输入
     onScreenflag(1,0,0);
@@ -236,6 +238,7 @@ void showAllTextToScreen(row** BeginRow)
     for(;showRow<ScreenMaxRow &&(BeginRow-Text.content)<Text.TextMallocRow && (*BeginRow)!=NULL;showRow++, BeginRow++)
     {
        // setCursorPos(ScreenMaxcol*showRow);
+        RegexAllMatch(*BeginRow);
         showTextToScreen((*BeginRow)->Tchars,(*BeginRow)->colors,(*BeginRow)->size);
     }
 }
@@ -473,6 +476,7 @@ void initEditor()
     Text.bottomMsg.Tchars = malloc(ScreenMaxcol);
     Text.bottomMsg.colors = malloc(ScreenMaxcol);
     memset(Text.bottomMsg.Tchars,'\0',ScreenMaxcol);
+    memset(Text.bottomMsg.colors,0x07,ScreenMaxcol);
     Text.bottomMsg.size = ScreenMaxcol;
     editorMode = COMMAND_MDOE;
     clearScreen();
@@ -797,7 +801,7 @@ void newLine(row** irow)
     }
     (*irow)->size = 0;
     memset((*irow)->Tchars,'\0',ScreenMaxcol+1);
-    memset((*irow)->colors,'\0',ScreenMaxcol+1);
+    memset((*irow)->colors,0x07,ScreenMaxcol+1);
     Text.TextMallocRow += 1;
 }
 
@@ -1084,7 +1088,7 @@ void ReadFromRegex(char* fileName)
     int filesize = getFileSize(fileName);
     char* allText = malloc(filesize);
     filesize = read(fd,allText,filesize);
-    int rowcnt = 0,Textpos =0 ,FirstSpace=-1;
+    int rowcnt = 0,Textpos =0 ,FirstSplit=-1;
     while(1)
     {
         if(Textpos>=filesize)
@@ -1094,8 +1098,8 @@ void ReadFromRegex(char* fileName)
         for(;i<ScreenMaxcol && Textpos<Text.size;i++,Textpos++)
         {
             tchar[i] = allText[Textpos];
-            if(FirstSpace == -1 && tchar[i]==' ')
-                FirstSpace = i+1;
+            if(FirstSplit == -1 && tchar[i]==',')
+                FirstSplit = i;
             if(tchar[i] == '\n')
             {
                 i += 1;
@@ -1103,10 +1107,19 @@ void ReadFromRegex(char* fileName)
                 break;
             }
         }
-        Regexs.regexRow[rowcnt].Tchars = malloc(i-FirstSpace);
-        memmove(Regexs.regexRow[rowcnt].Tchars,TmpBufferRow.Tchars+FirstSpace,i-FirstSpace);
-        Regexs.regexRow[rowcnt].Tchars[i-1-FirstSpace] = '\0';
-        Regexs.regexRow[rowcnt].color = atoi(TmpBufferRow.Tchars);
+        Regexs.regexRow[rowcnt].Tchars = malloc(FirstSplit+1);
+        Regexs.regexRow[rowcnt].headoffset = 0;
+        Regexs.regexRow[rowcnt].tailoffset = 0;
+        Regexs.regexRow[rowcnt].color = 0x07;
+        memmove(Regexs.regexRow[rowcnt].Tchars,TmpBufferRow.Tchars,FirstSplit);
+        Regexs.regexRow[rowcnt].Tchars[FirstSplit] = '\0';
+        //这三段无奈之举啊
+        Regexs.regexRow[rowcnt].color = atoi(TmpBufferRow.Tchars+FirstSplit+1);FirstSplit += 1;
+        for(;tchar[FirstSplit]>='0' && tchar[FirstSplit]<='9';FirstSplit++)
+        Regexs.regexRow[rowcnt].headoffset = atoi(TmpBufferRow.Tchars+FirstSplit+1);FirstSplit += 1;
+        for(;tchar[FirstSplit]>='0' && tchar[FirstSplit]<='9';FirstSplit++)
+        Regexs.regexRow[rowcnt].tailoffset = atoi(TmpBufferRow.Tchars+FirstSplit+1);FirstSplit += 1;
+
         printf(1,"%s  %d\n",Regexs.regexRow[rowcnt].Tchars,Regexs.regexRow[rowcnt].color);
         rowcnt += 1;
     }
@@ -1118,6 +1131,7 @@ void ReadFromRegex(char* fileName)
 
 void RegexAllMatch(row* tarRow)
 {
+  //  printf(1,"---%d\n",Regexs.rownum);
     for(int i=0;i<Regexs.rownum;++i)
         RegexMatch(tarRow,&(Regexs.regexRow[i]));
     return ;
@@ -1129,5 +1143,7 @@ void RegexMatch(row* tarRow,Regexitem* regex)
     //这里避免BUG
     tarRow->Tchars[tarRow->size] = '\0';
     matchidx = re_match(regex->Tchars,tarRow->Tchars,&matchLength);
-    memset(tarRow->colors+matchidx,regex->color,matchLength-2);
+  //  printf(1,"%d ,  %d \n",matchidx,matchLength);
+    if(matchidx!=-1)
+        memset(tarRow->colors+matchidx+regex->headoffset ,regex->color,matchLength-regex->tailoffset);
 }
