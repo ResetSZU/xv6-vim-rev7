@@ -464,11 +464,11 @@ int sys_clearScreen(void)
 
 int sys_showTextToScreen(void)
 {
-  char* content;
+  char* content,*color;
   int  tsize;
-  if(argstr(0,&content)<0,argint(1,&tsize))
+  if(argint(0,&content)<0 || argint(1,&color)<0 || argint(2,&tsize)<0)
     return -1;
-  showTextToScreen(content,tsize);
+  showTextToScreen(content,color,tsize);
   return 0;
 }
 
