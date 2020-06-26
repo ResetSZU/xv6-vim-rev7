@@ -1,3 +1,5 @@
+
+
 /*
     打开vim后，我一般使用hw.c来测试！
 
@@ -21,6 +23,18 @@ typedef struct row
     char* Tchars;
     uchar* colors;
 }row;
+
+typedef struct Regexitem
+{
+    char* Tchars;
+    int color;
+}Regexitem;
+
+typedef struct RegexArray
+{
+    Regexitem* regexRow;
+    int rownum;
+}RegexArray;
 
 typedef struct editorText
 {
@@ -46,11 +60,13 @@ static row TmpBufferRow;
 static row MatchBufferRow;
 static char editorMode ; //這個是判斷處於什麼模式：編輯模式/命令模式/ＥＸ模式
 static char* fileName;
+static RegexArray Regexs;
 
 //=====================================这里就是定义函数了==================================
 
 //读写文件函数
-void ReadfromFile(char*);
+void ReadFromFile(char*);
+void ReadFromRegex(char*);
 void WriteToFile(char*);
 int  getFileSize(char* );
 
@@ -72,6 +88,10 @@ int movePosRight();
 int movePosLeft();
 int movePosUp();
 int movePosDown();
+
+//这是正则表达式匹配的算法
+void RegexMatch(row* tarRow,Regexitem* regex);
+void RegexAllMatch(row* tarRow);
 
 void readCharFromScreen(char*,int);
 void setBottomMsg(const char*,int);
@@ -101,7 +121,8 @@ int main(int argc, char **argv)
     fileName = argv[1];
 
     //這裏好像要保存原來的screen內容，看情況吧
-    ReadfromFile(fileName);
+    ReadFromFile(fileName);
+   // ReadFromRegex("Regex.txt");
     initEditor();
     //这个是让即时读取输入
     onScreenflag(1,0,0);
@@ -120,7 +141,7 @@ int main(int argc, char **argv)
 
 //=======================================函数实现=================================================
 
-void ReadfromFile(char*fileName)
+void ReadFromFile(char*fileName)
 {
     printf(1,"read file successfully\n");
     int fd = 0, filesize = -1;
@@ -212,10 +233,10 @@ void RefreshScreen()
 void showAllTextToScreen(row** BeginRow)
 {
     int showRow = 0;
-    for(;showRow<ScreenMaxRow && (*BeginRow)!=NULL;showRow++, BeginRow++)
+    for(;showRow<ScreenMaxRow &&(BeginRow-Text.content)<Text.TextMallocRow && (*BeginRow)!=NULL;showRow++, BeginRow++)
     {
        // setCursorPos(ScreenMaxcol*showRow);
-        showTextToScreen((*BeginRow)->Tchars,NULL,(*BeginRow)->size);
+        showTextToScreen((*BeginRow)->Tchars,(*BeginRow)->colors,(*BeginRow)->size);
     }
 }
 
@@ -657,6 +678,7 @@ void insertChar(char ichar)
         break;
     case VIM_DELETE:
         moveLeftNchars(1,trow,tcol);
+     //   printf(1,"yes \n");
         movePosLeft();
         break;
     default:
@@ -770,12 +792,12 @@ void newLine(row** irow)
     }else
     {
         (*irow) = malloc(sizeof(row));
-        (*irow)->Tchars = malloc(ScreenMaxcol);
-        (*irow)->colors = malloc(ScreenMaxcol);
+        (*irow)->Tchars = malloc(ScreenMaxcol+1);
+        (*irow)->colors = malloc(ScreenMaxcol+1);
     }
     (*irow)->size = 0;
-    memset((*irow)->Tchars,'\0',ScreenMaxcol);
-    memset((*irow)->colors,'\0',ScreenMaxcol);
+    memset((*irow)->Tchars,'\0',ScreenMaxcol+1);
+    memset((*irow)->colors,'\0',ScreenMaxcol+1);
     Text.TextMallocRow += 1;
 }
 
@@ -860,8 +882,14 @@ void moveLeftNchars(int n,int trow,int tcol)
     {
         if(trow+brow-Text.content==Text.TextMallocRow)
             return ;
-        if(brow[trow]->Tchars[tcol]=='\n')
+        if(brow[trow]->Tchars[tcol]=='\n'  )
         {
+            if(brow[trow]->size<=1)
+            {
+                deleteLine(brow+trow);
+                break;
+            }
+         //   printf(1,"%d\n",brow[trow]->size);
             TmpBufferRow.size = ScreenMaxcol-tcol;
             if(trow+brow-Text.content==Text.TextMallocRow-1)
             {
@@ -873,7 +901,7 @@ void moveLeftNchars(int n,int trow,int tcol)
                 memmove(brow[trow]->Tchars+tcol,brow[trow+1]->Tchars,
                     min(brow[trow+1]->size,TmpBufferRow.size));
                 brow[trow]->size += min(brow[trow+1]->size,TmpBufferRow.size)-1;
-                n = TmpBufferRow.size;
+                n = min(brow[trow+1]->size,TmpBufferRow.size);
                 trow += 1;
                 tcol = 0;
             }
@@ -882,6 +910,7 @@ void moveLeftNchars(int n,int trow,int tcol)
         {
             if(n>=brow[trow]->size-tcol)
             {
+         //       printf(1,"---------------\n");
                 memset(brow[trow]->Tchars[tcol],'\0',ScreenMaxcol-tcol);
                 if(tcol == 0)
                     deleteLine(brow+trow);
@@ -895,6 +924,7 @@ void moveLeftNchars(int n,int trow,int tcol)
                 memset(brow[trow]->Tchars+brow[trow]->size-n,'\0',ScreenMaxcol-brow[trow]->size+n);
                 brow[trow]->size -= n;
             }
+         //   printf(1,"--------------------end\n");
             break;
         }else
         {
@@ -929,7 +959,7 @@ void setBottomMsg(const char* stateMsg,int tlen)
     
     int nowPos = getCursorPos();
     setCursorPos(ScreenMaxRow*ScreenMaxcol);
-    showTextToScreen(Text.bottomMsg.Tchars,NULL,Text.bottomMsg.size-1);
+    showTextToScreen(Text.bottomMsg.Tchars,Text.bottomMsg.colors,Text.bottomMsg.size-1);
     setCursorPos(nowPos);
 }
 
@@ -960,7 +990,7 @@ void updateBottomPos()
         Text.bottomMsg.Tchars[offset++] = '%';
     }
     setCursorPos(ScreenMaxRow*ScreenMaxcol);
-    showTextToScreen(Text.bottomMsg.Tchars,NULL,Text.bottomMsg.size-1);
+    showTextToScreen(Text.bottomMsg.Tchars,Text.bottomMsg.colors,Text.bottomMsg.size-1);
     setCursorPos(nowPos);
     Text.activatePos = nowPos;
 }
@@ -1040,3 +1070,64 @@ void kmpPrefixFunction(char *p,int length,char *prefix)
     }
 }
 
+void ReadFromRegex(char* fileName)
+{
+    int rownum = 0;
+    int fd = -1;
+    if(fileName == NULL ||(fd = open(fileName,O_RDONLY)) < 0)
+    {
+        Regexs.regexRow = NULL;
+        Regexs.rownum = 0;
+        return ;
+    }
+    Regexs.regexRow = malloc(sizeof(Regexitem)*FileMaxrowLen);
+    int filesize = getFileSize(fileName);
+    char* allText = malloc(filesize);
+    filesize = read(fd,allText,filesize);
+    int rowcnt = 0,Textpos =0 ,FirstSpace=-1;
+    while(1)
+    {
+        if(Textpos>=filesize)
+            break;
+        char* tchar = TmpBufferRow.Tchars;
+        int i = 0;
+        for(;i<ScreenMaxcol && Textpos<Text.size;i++,Textpos++)
+        {
+            tchar[i] = allText[Textpos];
+            if(FirstSpace == -1 && tchar[i]==' ')
+                FirstSpace = i+1;
+            if(tchar[i] == '\n')
+            {
+                i += 1;
+                Textpos += 1;
+                break;
+            }
+        }
+        Regexs.regexRow[rowcnt].Tchars = malloc(i-FirstSpace);
+        memmove(Regexs.regexRow[rowcnt].Tchars,TmpBufferRow.Tchars+FirstSpace,i-FirstSpace);
+        Regexs.regexRow[rowcnt].Tchars[i-1-FirstSpace] = '\0';
+        Regexs.regexRow[rowcnt].color = atoi(TmpBufferRow.Tchars);
+        printf(1,"%s  %d\n",Regexs.regexRow[rowcnt].Tchars,Regexs.regexRow[rowcnt].color);
+        rowcnt += 1;
+    }
+    Regexs.rownum = rowcnt;
+    free(allText);
+    close(fd);
+    return ;
+}
+
+void RegexAllMatch(row* tarRow)
+{
+    for(int i=0;i<Regexs.rownum;++i)
+        RegexMatch(tarRow,&(Regexs.regexRow[i]));
+    return ;
+}
+
+void RegexMatch(row* tarRow,Regexitem* regex)
+{
+    int matchLength,matchidx;
+    //这里避免BUG
+    tarRow->Tchars[tarRow->size] = '\0';
+    matchidx = re_match(regex->Tchars,tarRow->Tchars,&matchLength);
+    memset(tarRow->colors+matchidx,regex->color,matchLength-2);
+}
