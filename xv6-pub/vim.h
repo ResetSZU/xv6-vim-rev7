@@ -26,3 +26,29 @@
 #define VIM_TAB		9
 #define VIM_ENTER		10
 
+
+#define CTRL_E 5  //这是上滚
+#define CTRL_Y 25 //这是下滚
+#define CTRL_F 6 //这是下翻
+#define CTRL_B 2 //这是上翻
+#define CTRL_R 18 //这是重复
+
+
+
+#define C_BLACK 0
+#define C_BLUE 1
+#define C_GREEN 2
+#define C_CYAN 3
+#define C_RED 4
+#define C_PURPLE 5
+#define C_BROWN 6
+#define C_LIGHTGREY 7
+#define C_DARKGREY 8
+#define C_LIGHTBLUE 9
+#define C_LIGHTGREEN 10
+#define C_LIGHTCYAN 11
+#define C_LIGHTRED 12
+#define C_LIGHTPURPLE 13
+#define C_YELLOW 14
+#define C_WHITE 15
+
