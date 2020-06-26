@@ -215,7 +215,7 @@ void showAllTextToScreen(row** BeginRow)
     for(;showRow<ScreenMaxRow && (*BeginRow)!=NULL;showRow++, BeginRow++)
     {
        // setCursorPos(ScreenMaxcol*showRow);
-        showTextToScreen((*BeginRow)->Tchars,(*BeginRow)->size);
+        showTextToScreen((*BeginRow)->Tchars,NULL,(*BeginRow)->size);
     }
 }
 
@@ -929,7 +929,7 @@ void setBottomMsg(const char* stateMsg,int tlen)
     
     int nowPos = getCursorPos();
     setCursorPos(ScreenMaxRow*ScreenMaxcol);
-    showTextToScreen(Text.bottomMsg.Tchars,Text.bottomMsg.size-1);
+    showTextToScreen(Text.bottomMsg.Tchars,NULL,Text.bottomMsg.size-1);
     setCursorPos(nowPos);
 }
 
@@ -960,7 +960,7 @@ void updateBottomPos()
         Text.bottomMsg.Tchars[offset++] = '%';
     }
     setCursorPos(ScreenMaxRow*ScreenMaxcol);
-    showTextToScreen(Text.bottomMsg.Tchars,Text.bottomMsg.size-1);
+    showTextToScreen(Text.bottomMsg.Tchars,NULL,Text.bottomMsg.size-1);
     setCursorPos(nowPos);
     Text.activatePos = nowPos;
 }

@@ -315,7 +315,7 @@ void setCursorPos(int pos)
   outb(CRTPORT+1, pos>>8);
   outb(CRTPORT, 15);
   outb(CRTPORT+1, pos);
-  crt[pos] |= 0x0700;
+ // crt[pos] |= 0x0700;
 }
 
 int getCursorPos()
@@ -334,19 +334,58 @@ void clearScreen()
   setCursorPos(0);
 }
 
-void showTextToScreen(char* content,int tsize)
+static 
+void setScreenColor(int c,int color)
+{
+  int pos;
+
+  // Cursor position: col + 80*row.
+  outb(CRTPORT, 14);
+  pos = inb(CRTPORT+1) << 8;
+  outb(CRTPORT, 15);
+  pos |= inb(CRTPORT+1);
+
+  if(c == '\n')
+    pos += 80 - pos%80;
+  else if(c == BACKSPACE){
+    if(pos > 0) --pos;
+  } else
+    crt[pos++] = (c&0xff) | color;  // black on white
+
+  if(pos < 0 || pos > 25*80)
+    panic("pos under/overflow");
+
+  if((pos/80) > 24){  // Scroll up.
+    memmove(crt, crt+80, sizeof(crt[0])*23*80);
+    pos -= 80;
+    memset(crt+pos, 0, sizeof(crt[0])*(24*80 - pos));
+  }
+
+  outb(CRTPORT, 14);
+  outb(CRTPORT+1, pos>>8);
+  outb(CRTPORT, 15);
+  outb(CRTPORT+1, pos);
+  crt[pos] = ' ' | 0x0700;
+}
+
+
+void showTextToScreen(char* content,char* colors,int tsize)
 {
   int pos = getCursorPos();
+  char color = 0x07;
   int toffset = 0;
   tsize = tsize<ScreenTextMaxLen?tsize:ScreenTextMaxLen;
-  for(;toffset<tsize && pos<ScreenMaxLen ;toffset++,pos++,content++)
+  for(;toffset<tsize && pos<ScreenMaxLen ;toffset++,pos++)
   {
-    if((pos>=(ScreenTextMaxLen-ScreenMaxcol)) && ((*content)=='\n'))
+    if((pos>=(ScreenTextMaxLen-ScreenMaxcol)) && (content[toffset]=='\n'))
       break;
-    cgaputc(*content);
+    color = (colors!=NULL?colors[toffset]:0x07);
+    setScreenColor(content[toffset],color);
+  //  cgaputc(content[toffset]);
   }
   return ;
 }
+
 
 void onScreenflag(int bufferflag,int showflag,int stopFlag)
 {
