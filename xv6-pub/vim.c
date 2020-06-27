@@ -22,6 +22,7 @@ typedef struct row
     int size; //这是实际长度
     char* Tchars;
     uchar* colors;
+    char* dirty;
 }row;
 
 typedef struct Regexitem
@@ -652,6 +653,7 @@ void insertChar(char ichar)
     switch (uichar)
     {
     case '\n':  //这里需要判断是不是段尾，所以很麻烦
+        Currow->dirty = 1;
         memmove(TmpBufferRow.Tchars,Currow->Tchars+tcol,Currow->size-tcol);
         TmpBufferRow.size = Currow->size-tcol;
         if(Currow->Tchars[Currow->size-1]=='\n')
@@ -800,6 +802,7 @@ void newLine(row** irow)
         (*irow)->colors = malloc(ScreenMaxcol+1);
     }
     (*irow)->size = 0;
+    (*irow)->dirty = 1;
     memset((*irow)->Tchars,'\0',ScreenMaxcol+1);
     memset((*irow)->colors,0x07,ScreenMaxcol+1);
     Text.TextMallocRow += 1;
@@ -842,12 +845,14 @@ void moveRightNchars(int n,int trow,int tcol)
         }
         char* tchar = brow[trow]->Tchars;
         int tsize = brow[trow]->size;
+        brow[trow]->dirty = 1;
         if(tsize+n<=ScreenMaxcol) //這裏是段落尾部了可以結束了
         {
            // printf(1,"this is tsize %d\n",tsize);
             memmove(tchar+tcol+n,tchar+tcol,tsize-tcol);
             memmove(tchar+tcol,TmpBufferRow.Tchars,TmpBufferRow.size);
             brow[trow]->size += n;
+
             break;
             
         }else
@@ -902,6 +907,7 @@ void moveLeftNchars(int n,int trow,int tcol)
                 break;
             }else
             {
+                brow[trow]->dirty = 1;
                 memmove(brow[trow]->Tchars+tcol,brow[trow+1]->Tchars,
                     min(brow[trow+1]->size,TmpBufferRow.size));
                 brow[trow]->size += min(brow[trow+1]->size,TmpBufferRow.size)-1;
@@ -910,6 +916,7 @@ void moveLeftNchars(int n,int trow,int tcol)
                 tcol = 0;
             }
         }
+        brow[trow]->dirty = 1;
         if(brow[trow]->Tchars[brow[trow]->size-1]=='\n')
         {
             if(n>=brow[trow]->size-tcol)
@@ -1091,6 +1098,7 @@ void ReadFromRegex(char* fileName)
     int rowcnt = 0,Textpos =0 ,FirstSplit=-1;
     while(1)
     {
+        FirstSplit = -1;
         if(Textpos>=filesize)
             break;
         char* tchar = TmpBufferRow.Tchars;
@@ -1107,6 +1115,8 @@ void ReadFromRegex(char* fileName)
                 break;
             }
         }
+        if(i<=1)
+            break;
         Regexs.regexRow[rowcnt].Tchars = malloc(FirstSplit+1);
         Regexs.regexRow[rowcnt].headoffset = 0;
         Regexs.regexRow[rowcnt].tailoffset = 0;
@@ -1115,35 +1125,52 @@ void ReadFromRegex(char* fileName)
         Regexs.regexRow[rowcnt].Tchars[FirstSplit] = '\0';
         //这三段无奈之举啊
         Regexs.regexRow[rowcnt].color = atoi(TmpBufferRow.Tchars+FirstSplit+1);FirstSplit += 1;
-        for(;tchar[FirstSplit]>='0' && tchar[FirstSplit]<='9';FirstSplit++)
+        for(;tchar[FirstSplit]>='0' && tchar[FirstSplit]<='9';FirstSplit++);
         Regexs.regexRow[rowcnt].headoffset = atoi(TmpBufferRow.Tchars+FirstSplit+1);FirstSplit += 1;
-        for(;tchar[FirstSplit]>='0' && tchar[FirstSplit]<='9';FirstSplit++)
+        for(;tchar[FirstSplit]>='0' && tchar[FirstSplit]<='9';FirstSplit++);
         Regexs.regexRow[rowcnt].tailoffset = atoi(TmpBufferRow.Tchars+FirstSplit+1);FirstSplit += 1;
 
-        printf(1,"%s  %d\n",Regexs.regexRow[rowcnt].Tchars,Regexs.regexRow[rowcnt].color);
+        printf(1,"----%s  %d  %d  %d\n",Regexs.regexRow[rowcnt].Tchars,Regexs.regexRow[rowcnt].color,
+            Regexs.regexRow[rowcnt].headoffset,Regexs.regexRow[rowcnt].tailoffset);
         rowcnt += 1;
     }
     Regexs.rownum = rowcnt;
     free(allText);
     close(fd);
+    printf(1,"--------------close regex.txt\n");
     return ;
 }
 
 void RegexAllMatch(row* tarRow)
 {
   //  printf(1,"---%d\n",Regexs.rownum);
+    if(tarRow->dirty == 0)
+        return ;
+    memset(tarRow->colors,0x07,ScreenMaxcol);
     for(int i=0;i<Regexs.rownum;++i)
+    {
         RegexMatch(tarRow,&(Regexs.regexRow[i]));
+    }
+    tarRow->dirty = 0;
     return ;
 }
 
 void RegexMatch(row* tarRow,Regexitem* regex)
 {
-    int matchLength,matchidx;
+    int matchLength=0,matchidx=0;
     //这里避免BUG
     tarRow->Tchars[tarRow->size] = '\0';
-    matchidx = re_match(regex->Tchars,tarRow->Tchars,&matchLength);
-  //  printf(1,"%d ,  %d \n",matchidx,matchLength);
-    if(matchidx!=-1)
-        memset(tarRow->colors+matchidx+regex->headoffset ,regex->color,matchLength-regex->tailoffset);
+    while(1)
+    {
+        matchLength = 0;
+        int tidx = re_match(regex->Tchars,(tarRow->Tchars+matchidx),&matchLength);
+        if(tidx!=-1 && matchLength!=0)
+        {
+     //       printf(1,"%d ,  %d   %c \n",matchidx+tidx,matchLength,tarRow->Tchars[matchidx+tidx]);
+            memset(tarRow->colors+matchidx+tidx+regex->headoffset ,regex->color,max(matchLength-regex->tailoffset,0));
+            matchidx += tidx+1;
+        }
+        else
+            break;
+    }
 }
