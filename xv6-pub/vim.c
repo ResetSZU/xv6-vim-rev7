@@ -22,7 +22,7 @@ typedef struct row
     int size; //这是实际长度
     char* Tchars;
     uchar* colors;
-    char* dirty;
+    char dirty;
 }row;
 
 typedef struct Regexitem
@@ -1110,7 +1110,7 @@ void ReadFromRegex(char* fileName)
     }
     Regexs.regexRow = malloc(sizeof(Regexitem)*FileMaxrowLen);
     int filesize = getFileSize(fileName);
-    char* allText = malloc(filesize);
+    char* allText = malloc(filesize+5);
     filesize = read(fd,allText,filesize);
     int rowcnt = 0,Textpos =0 ,FirstSplit=-1;
     while(1)
@@ -1132,7 +1132,7 @@ void ReadFromRegex(char* fileName)
                 break;
             }
         }
-        if(i<=1)
+        if(i<=2)
             break;
         Regexs.regexRow[rowcnt].Tchars = malloc(FirstSplit+1);
         Regexs.regexRow[rowcnt].headoffset = 0;
@@ -1147,14 +1147,14 @@ void ReadFromRegex(char* fileName)
         for(;tchar[FirstSplit]>='0' && tchar[FirstSplit]<='9';FirstSplit++);
         Regexs.regexRow[rowcnt].tailoffset = atoi(TmpBufferRow.Tchars+FirstSplit+1);FirstSplit += 1;
 
-        printf(1,"----%s  %d  %d  %d\n",Regexs.regexRow[rowcnt].Tchars,Regexs.regexRow[rowcnt].color,
-            Regexs.regexRow[rowcnt].headoffset,Regexs.regexRow[rowcnt].tailoffset);
+      //  printf(1,"----%s  %d  %d  %d\n",Regexs.regexRow[rowcnt].Tchars,Regexs.regexRow[rowcnt].color,
+       //     Regexs.regexRow[rowcnt].headoffset,Regexs.regexRow[rowcnt].tailoffset);
         rowcnt += 1;
     }
     Regexs.rownum = rowcnt;
     free(allText);
     close(fd);
-    printf(1,"--------------close %s\n",fileName);
+   // printf(1,"--------------close %s\n",fileName);
     return ;
 }
 
