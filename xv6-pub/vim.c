@@ -150,14 +150,20 @@ void ReadFromFile(char*fileName)
     int fd = 0, filesize = -1;
     //這裏初始化池子
     TextPool.content = malloc(sizeof(row*)*FileMaxrowLen);
+    Text.BeginRow = Text.content;
     TextPool.TextPoolRow = 0;
     //這裏初始化文本
     Text.content = malloc(sizeof(row*)*FileMaxrowLen);
+    memset(Text.content,NULL,FileMaxrowLen);
     Text.TextMallocRow = 0;
     if(fileName==NULL || (fd = open(fileName, O_RDONLY))<0)
     {
         printf(1,"open error! %d \n",fd);
         Text.size = 0;
+        Text.TextDirty = 0;
+        newLine(Text.content);
+        Text.TextMallocRow = 1;
+        
     }else
     {
         filesize = getFileSize(fileName);
@@ -185,7 +191,7 @@ void ReadFromFile(char*fileName)
             Text.content[rowcnt]->size = i;
             rowcnt += 1;
         }
-        Text.BeginRow = Text.content;
+
         free(allText);
         close(fd);
         if(Text.size < 0)
@@ -198,14 +204,20 @@ void ReadFromFile(char*fileName)
 
 void WriteToFile(char* filename)
 {
+  //  return ;
     int fd = 0;
     if(filename == NULL)
         filename = "noName.txt";
-    fd = open(filename,O_WRONLY|O_CREATE);
+    if((fd = open(filename,O_WRONLY|O_CREATE))<0)
+    {
+  //      printf(1,"Write fail!\n");
+        return ;
+    }
     for(int i=0;i<Text.TextMallocRow;++i)
         write(fd,Text.content[i]->Tchars,Text.content[i]->size);
     close(fd);
     Text.TextDirty = 0;
+  //  printf(1,"Write successfully!\n");
 }
 
 int getFileSize(char* filename)
@@ -647,6 +659,8 @@ void insertChar(char ichar)
 {
     int pos = getCursorPos();
     int trow = pos/ScreenMaxcol,tcol = pos%ScreenMaxcol;
+    if(trow>Text.TextMallocRow)
+        newLine(Text.BeginRow+trow);
     row* Currow = Text.BeginRow[trow];
     unsigned char uichar = (unsigned char)ichar;
    // printf(1,"this is input char%d",uichar);
@@ -656,7 +670,7 @@ void insertChar(char ichar)
         Currow->dirty = 1;
         memmove(TmpBufferRow.Tchars,Currow->Tchars+tcol,Currow->size-tcol);
         TmpBufferRow.size = Currow->size-tcol;
-        if(Currow->Tchars[Currow->size-1]=='\n')
+        if(Currow->Tchars[Currow->size-1]=='\n' || Text.BeginRow-Text.content+trow+1 >= Text.TextMallocRow)
         {
             Text.BeginRow[trow]->Tchars[tcol] = '\n';
             memset(Currow->Tchars+tcol+1,'\0',ScreenMaxcol-tcol-1);
@@ -707,8 +721,9 @@ void editorEx()
     while (1)
     {
         readCharFromScreen(ichar,0);
+        setBottomMsg(" ",0);
         setBottomMsg(":",1);
-        setCursorPos(ScreenTextMaxLen+1);
+        setCursorPos(ScreenTextMaxLen);
      //   printf(1,"------%d\n",ichar[0]);
         if(ichar[0]==VIM_ESC)
         {
@@ -742,6 +757,7 @@ void editorEx()
         }else if(strcmp(ichar,"w\n") == 0)
         {
             Command_w();
+            break;
         }else
         {
             Command_error(ichar);
@@ -771,6 +787,7 @@ void Command_w()
     memmove(TmpBufferRow.Tchars+strlen(fileName),msg,strlen(msg));
     TmpBufferRow.size = strlen(fileName)+strlen(msg);
     setBottomMsg(TmpBufferRow.Tchars,TmpBufferRow.size);
+    setCursorPos(Text.activatePos);
 }
 
 
@@ -1103,7 +1120,7 @@ void ReadFromRegex(char* fileName)
             break;
         char* tchar = TmpBufferRow.Tchars;
         int i = 0;
-        for(;i<ScreenMaxcol && Textpos<Text.size;i++,Textpos++)
+        for(;i<ScreenMaxcol && Textpos<filesize;i++,Textpos++)
         {
             tchar[i] = allText[Textpos];
             if(FirstSplit == -1 && tchar[i]==',')
@@ -1137,7 +1154,7 @@ void ReadFromRegex(char* fileName)
     Regexs.rownum = rowcnt;
     free(allText);
     close(fd);
-    printf(1,"--------------close regex.txt\n");
+    printf(1,"--------------close %s\n",fileName);
     return ;
 }
 
