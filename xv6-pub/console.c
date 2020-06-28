@@ -379,7 +379,7 @@ void showTextToScreen(char* content,char* colors,int tsize)
   {
     if((pos>=(ScreenTextMaxLen-ScreenMaxcol)) && (content[toffset]=='\n'))
       break;
-  //  color = (colors!=NULL?colors[toffset]:0x07);
+    color = (colors!=NULL?colors[toffset]:0x07);
     setScreenColor(content[toffset],color<<8);
   //  cgaputc(content[toffset]);
   }
