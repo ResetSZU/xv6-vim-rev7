@@ -21,7 +21,7 @@ typedef struct row
 {
     int size; //这是实际长度
     char* Tchars;
-    uchar* colors;
+    char* colors;
     char dirty;
 }row;
 
@@ -46,7 +46,7 @@ typedef struct editorText
     uint TextMallocRow; //文本申请行数
     row** BeginRow;//屏幕第一行对应文本的位置，上下翻页
     row bottomMsg; // 这里就是底部状态栏了
-    uchar TextDirty;  //若没有修改文本，则不写，节约读写
+    char TextDirty;  //若没有修改文本，则不写，节约读写
     //后面看喜欢加吧
     int activatePos;
 }editorText;
@@ -85,6 +85,12 @@ void ExitProcess();
 void editorEx();
 void editorInsert();
 void freeAllBuffer();
+void newLine(row** );
+void deleteLine(row**);
+void updateBottomPos();
+void moveLeftNchars(int ,int ,int );
+void moveRightNchars(int ,int ,int );
+void insertChar(char );
 
 //光标移动的函数
 int movePosRight();
@@ -93,13 +99,18 @@ int movePosUp();
 int movePosDown();
 
 //这是正则表达式匹配的算法
-void RegexMatch(row* tarRow,Regexitem* regex);
+void RegexMatch(row* ,Regexitem* );
 void RegexAllMatch(row* tarRow);
 
 void readCharFromScreen(char*,int);
 void setBottomMsg(const char*,int);
+
+//这里是命令模式的函数
 void Command_w();
 void command_match(char*,int);
+void command_row(int(*)(void));
+void command_nextWord();
+void Command_error(char* );
 
 void checkPos(int pos);
 int getTextSize();
@@ -423,7 +434,7 @@ void ProcessKeyPress()
         RefreshScreenKpos();
         break;
     case CTRL_B:
-        Text.BeginRow = max(Text.content,Text.BeginRow-ScreenMaxRow);
+        Text.BeginRow = max((int)Text.content,(int)Text.BeginRow-ScreenMaxRow);
         setCursorPos(trow*ScreenMaxcol);
         RefreshScreenKpos();
         break;
@@ -533,7 +544,7 @@ void editorInsert()
     {
         readCharFromScreen(&ichar,1);
         unsigned char unichar = (unsigned char)(ichar);
-        int pos = getCursorPos();
+       // int pos = getCursorPos();
         switch (unichar)
         {
         case VIM_UP:
@@ -919,7 +930,6 @@ void moveLeftNchars(int n,int trow,int tcol)
 {
     row** brow = Text.BeginRow;
     char tmprow[ScreenMaxcol] ;
-    int tmpRowSize = 0;
     while(1)
     {
         if(trow+brow-Text.content>=Text.TextMallocRow)
@@ -1041,7 +1051,7 @@ void updateBottomPos()
 
 int itoa (int n,char* s)
 {
-  int i,j,sign;
+  int i,sign;
   if((sign=n)<0)//记录符号
   n=-n;//使n成为正数
   i=0;
@@ -1116,7 +1126,6 @@ void kmpPrefixFunction(char *p,int length,char *prefix)
 
 void ReadFromRegex(char* fileName)
 {
-    int rownum = 0;
     int fd = -1;
     if(fileName == NULL ||(fd = open(fileName,O_RDONLY)) < 0)
     {
